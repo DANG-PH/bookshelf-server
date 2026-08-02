@@ -42,6 +42,9 @@ export class CatalogService {
         dewey: cat.dewey,
         range: cat.range,
         intro: cat.intro,
+        // exposed so the frontend can float freshly-added topics to the
+        // front of the list — see the sort in index.html's render()
+        createdAt: cat.createdAt,
         books: books
           .filter((b) => b.categoryId === cat.id)
           .map((b) => ({
