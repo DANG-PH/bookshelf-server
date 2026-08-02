@@ -1,0 +1,82 @@
+{
+  "updated": "2026",
+  "curator": {
+    "name": "Phạm Hải Đăng",
+    "role": "Kỹ sư phần mềm",
+    "photo": "https://i.pinimg.com/originals/3b/32/1a/3b321acf7afa27274eda02c5e0730391.png"
+  },
+  "categories": [
+
+    {
+      "id": "eq",
+      "folder": "eq",
+      "title": "Trí Tuệ Cảm Xúc",
+      "dewey": "158.2",
+      "range": "100–199",
+      "intro": "Giao tiếp, lắng nghe, và thấu hiểu.",
+      "books": [
+        {
+          "num": "01",
+          "year": 1946,
+          "title": "Đi Tìm Lẽ Sống",
+          "author": "Viktor E. Frankl",
+          "blurb": "Hồi ký của một bác sĩ tâm thần sống sót qua trại tập trung Đức Quốc xã, và học thuyết liệu pháp ý nghĩa (logotherapy) được rút ra từ chính trải nghiệm đó — con người có thể chịu đựng gần như mọi nghịch cảnh nếu tìm được lý do để sống.",
+          "tags": ["PHIL", "SELF"],
+          "file": "di-tim-le-song.pdf",
+          "cover": "https://dtv-ebook.com.vn/images/Cover/37976065786_a63facf8de_o.jpg"
+        },
+        {
+          "num": "02",
+          "year": 2011,
+          "title": "Nghệ Thuật Tư Duy Rành Mạch",
+          "author": "Rolf Dobelli",
+          "blurb": "99 thiên kiến và lỗi tư duy phổ biến, mỗi cái gói gọn trong vài trang — từ thiên kiến xác nhận đến ngụy biện chi phí chìm — giúp nhận diện những cái bẫy logic vẫn âm thầm điều khiển quyết định hằng ngày.",
+          "tags": ["COG", "PSY"],
+          "file": "nghe-thuat-tu-duy-ranh-mach.pdf",
+          "cover": "https://dongkhoi.baovinhlong.vn/image/fckeditor/upload/2020/20200213/images/bia-sach.jpg"
+        },
+        {
+          "num": "03",
+          "year": 1995,
+          "title": "Trí Tuệ Xúc Cảm",
+          "author": "Daniel Goleman",
+          "blurb": "Cuốn sách đặt nền móng cho khái niệm EQ. Lập luận rằng khả năng nhận biết, điều tiết cảm xúc và thấu cảm với người khác quan trọng cho thành công và hạnh phúc không kém, thậm chí hơn, chỉ số IQ.",
+          "tags": ["PSY", "SELF"],
+          "file": "tri-tue-xuc-cam.pdf",
+          "cover": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRKSEZUp55cZdn7H0L6NaBod-tzlNFaDuT6cll75awoITD4U0hPKfDS5vyM&s=10"
+        },
+        {
+          "num": "04",
+          "year": 2011,
+          "title": "Tư Duy Nhanh Và Chậm",
+          "author": "Daniel Kahneman",
+          "blurb": "Hai hệ thống tư duy song song trong não bộ — một nhanh, bản năng, cảm tính; một chậm, có chủ đích, logic — và cách sự tương tác giữa chúng định hình mọi phán đoán, thành kiến và quyết định của con người.",
+          "tags": ["COG", "PSY"],
+          "file": "tu-duy-nhanh-va-cham.pdf",
+          "cover": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSsy9HzK-whg8tVUZvZa3ltvEx1Xr6WgzjgPyY00wqvr9YuTnN_8ttGOVf-&s=10"
+        }
+      ]
+    },
+    {
+      "id": "tech",
+      "folder": "tech",
+      "title": "Công nghệ",
+      "dewey": "005",
+      "range": "000–099",
+      "intro": "Phần mềm. hệ thống phân tán, và những ý tưởng hay.",
+      "books": [
+        {
+          "num": "01",
+          "year": 2017,
+          "title": "Designing Data-Intensive Applications",
+          "author": "Martin Kleppmann",
+          "blurb": "Những ý tưởng cốt lõi đằng sau các hệ thống đáng tin cậy, có khả năng mở rộng và dễ bảo trì. Storage engine, replication, partitioning, transaction, consistency — được giải thích với độ rõ ràng hiếm có.",
+          "tags": ["BE", "DE", "SA"],
+          "file": "DDIA.pdf",
+          "cover": "https://dataintensive.net/images/book-cover.png",
+          "isNew": true
+        }
+      ]
+    }
+  ]
+}
