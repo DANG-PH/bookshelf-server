@@ -8,7 +8,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { Repository } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
 import { Book } from '../../database/entities/book.entity';
+import { MAX_PDF_SIZE_BYTES } from '../../common/utils/storage';
 import { CategoriesService } from '../categories/categories.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
@@ -17,6 +19,14 @@ export interface UploadedBookFiles {
   file?: Express.Multer.File[];
   cover?: Express.Multer.File[];
 }
+
+interface ResolvedBookFile {
+  fileUrl: string;
+  fileOriginalName?: string;
+}
+
+const DOWNLOAD_TIMEOUT_MS = 20_000;
+const PDF_MAGIC_BYTES = '%PDF-';
 
 @Injectable()
 export class BooksService {
@@ -49,9 +59,11 @@ export class BooksService {
   }
 
   async create(dto: CreateBookDto, files: UploadedBookFiles): Promise<Book> {
-    const bookFile = files.file?.[0];
-    if (!bookFile) {
-      throw new BadRequestException('Thiếu file PDF của sách');
+    const resolvedFile = await this.resolveBookFile(files, dto);
+    if (!resolvedFile) {
+      throw new BadRequestException(
+        'Thiếu file PDF của sách — upload file hoặc dán link PDF',
+      );
     }
 
     await this.categoriesService.findOne(dto.categoryId);
@@ -65,8 +77,8 @@ export class BooksService {
       blurb: dto.blurb,
       tags: dto.tags,
       isNew: dto.isNew ?? true,
-      fileUrl: `books/${bookFile.filename}`,
-      fileOriginalName: bookFile.originalname,
+      fileUrl: resolvedFile.fileUrl,
+      fileOriginalName: resolvedFile.fileOriginalName,
       coverUrl: this.resolveCoverUrl(files, dto),
     });
 
@@ -84,23 +96,23 @@ export class BooksService {
       await this.categoriesService.findOne(dto.categoryId);
     }
 
-    const newBookFile = files.file?.[0];
+    const resolvedFile = await this.resolveBookFile(files, dto);
     const oldFileUrl = book.fileUrl;
     const newCoverUrl = this.resolveCoverUrl(files, dto);
     const oldCoverUrl = book.coverUrl;
 
     Object.assign(book, {
       ...dto,
-      fileUrl: newBookFile ? `books/${newBookFile.filename}` : book.fileUrl,
-      fileOriginalName: newBookFile
-        ? newBookFile.originalname
+      fileUrl: resolvedFile ? resolvedFile.fileUrl : book.fileUrl,
+      fileOriginalName: resolvedFile
+        ? resolvedFile.fileOriginalName
         : book.fileOriginalName,
       coverUrl: newCoverUrl ?? book.coverUrl,
     });
 
     const saved = await this.booksRepo.save(book);
 
-    if (newBookFile && oldFileUrl) await this.deleteLocalAsset(oldFileUrl);
+    if (resolvedFile && oldFileUrl) await this.deleteLocalAsset(oldFileUrl);
     if (newCoverUrl && oldCoverUrl && oldCoverUrl !== newCoverUrl) {
       await this.deleteLocalAsset(oldCoverUrl);
     }
@@ -123,6 +135,83 @@ export class BooksService {
     if (coverFile) return `covers/${coverFile.filename}`;
     if (dto.coverUrl) return dto.coverUrl;
     return undefined;
+  }
+
+  // uploaded file wins if both are somehow present; otherwise fetch the
+  // pasted PDF link server-side and store it exactly like an upload
+  private async resolveBookFile(
+    files: UploadedBookFiles,
+    dto: CreateBookDto | UpdateBookDto,
+  ): Promise<ResolvedBookFile | undefined> {
+    const bookFile = files.file?.[0];
+    if (bookFile) {
+      return {
+        fileUrl: `books/${bookFile.filename}`,
+        fileOriginalName: bookFile.originalname,
+      };
+    }
+    if (dto.pdfUrl) {
+      const { filename, originalName } = await this.downloadPdfFromUrl(
+        dto.pdfUrl,
+      );
+      return { fileUrl: `books/${filename}`, fileOriginalName: originalName };
+    }
+    return undefined;
+  }
+
+  private async downloadPdfFromUrl(
+    url: string,
+  ): Promise<{ filename: string; originalName: string }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: controller.signal });
+    } catch {
+      throw new BadRequestException(
+        'Không tải được file từ link đã cho (hết thời gian chờ hoặc không truy cập được)',
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok) {
+      throw new BadRequestException(
+        `Không tải được file từ link đã cho (HTTP ${res.status})`,
+      );
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    const looksLikePdfUrl = url.toLowerCase().split('?')[0].endsWith('.pdf');
+    if (!contentType.includes('application/pdf') && !looksLikePdfUrl) {
+      throw new BadRequestException('Link không trỏ tới một file PDF');
+    }
+
+    const declaredSize = Number(res.headers.get('content-length') || 0);
+    if (declaredSize > MAX_PDF_SIZE_BYTES) {
+      throw new BadRequestException('File PDF vượt quá dung lượng cho phép');
+    }
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.byteLength > MAX_PDF_SIZE_BYTES) {
+      throw new BadRequestException('File PDF vượt quá dung lượng cho phép');
+    }
+    if (buffer.subarray(0, 5).toString('latin1') !== PDF_MAGIC_BYTES) {
+      throw new BadRequestException('File tải về không phải PDF hợp lệ');
+    }
+
+    const filename = `${uuidv4()}.pdf`;
+    await fs.writeFile(join(this.uploadDir, 'books', filename), buffer);
+
+    const lastSegment = decodeURIComponent(
+      url.split('/').pop()?.split('?')[0] || '',
+    );
+    const originalName = lastSegment.toLowerCase().endsWith('.pdf')
+      ? lastSegment
+      : `${lastSegment || 'sach'}.pdf`;
+
+    return { filename, originalName };
   }
 
   private async nextNum(categoryId: string): Promise<string> {

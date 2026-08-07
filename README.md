@@ -112,7 +112,7 @@ mã PIN trước khi vào trang — gọi `POST /api/auth/login` để lấy JWT
 | POST | `/api/auth/login`        | công khai | Gửi `{ pin }`, trả về JWT |
 | GET  | `/api/catalog`            | JWT | Toàn bộ dữ liệu cho trang chính (curator + categories + books) |
 | GET/POST/PATCH/DELETE | `/api/categories` | JWT | CRUD ngăn sách |
-| GET/POST/PATCH/DELETE | `/api/books` | JWT | CRUD sách. POST/PATCH nhận `multipart/form-data` (field `file` = PDF, `cover` = ảnh, hoặc `coverUrl` = link ngoài) |
+| GET/POST/PATCH/DELETE | `/api/books` | JWT | CRUD sách. POST/PATCH nhận `multipart/form-data` (field `file` = PDF upload, hoặc `pdfUrl` = link PDF có sẵn để server tự tải về; `cover` = ảnh upload, hoặc `coverUrl` = link ảnh ngoài) |
 | GET/PATCH | `/api/settings` | JWT | Thông tin curator hiển thị ở sidebar |
 | GET | `/api/files/:type/:filename` | công khai (xem ghi chú) | Phục vụ PDF/ảnh đã upload (`type` = `books` hoặc `covers`) |
 | GET | `/api/health` | công khai | Health check |

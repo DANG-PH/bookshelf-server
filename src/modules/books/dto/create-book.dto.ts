@@ -73,6 +73,14 @@ export class CreateBookDto {
   @IsUrl()
   coverUrl?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Link tới file PDF có sẵn — server sẽ tải về thay vì phải upload thủ công. Bỏ qua nếu có upload file.',
+  })
+  @IsOptional()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  pdfUrl?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
