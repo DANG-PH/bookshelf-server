@@ -20,6 +20,7 @@ import { BooksService } from './books.service';
 import type { UploadedBookFiles } from './books.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
+import { UpdateBookStatusDto } from './dto/update-book-status.dto';
 
 const UPLOAD_FIELDS = [
   { name: 'file', maxCount: 1 },
@@ -57,6 +58,17 @@ export class BooksController {
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.booksService.findOne(id);
+  }
+
+  // plain-JSON PATCH, deliberately not behind FileFieldsInterceptor — this
+  // is the one thing the site lets anyone browsing (not just whoever's
+  // adding books) change directly from the reading view
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBookStatusDto,
+  ) {
+    return this.booksService.updateStatus(id, dto);
   }
 
   @Post()

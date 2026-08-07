@@ -53,6 +53,20 @@ export class Book {
   @Column({ nullable: true })
   coverUrl: string;
 
+  // a short personal note from whoever added the book ("mình chọn cuốn
+  // này vì...") — set once at add-time, shown on the card
+  @Column({ type: 'text', nullable: true })
+  note: string;
+
+  // 'want' | 'reading' | 'done' | null — set by whoever's browsing the
+  // site, plain varchar (not a DB enum) so it stays portable across
+  // postgres/mysql and easy to extend later without a schema migration
+  @Column({ type: 'varchar', nullable: true })
+  readStatus: string | null;
+
+  @Column({ default: false })
+  isFavorite: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

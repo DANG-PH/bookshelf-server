@@ -50,6 +50,14 @@ export class CreateBookDto {
   blurb?: string;
 
   @ApiPropertyOptional({
+    description: 'Lời nhắn riêng đính kèm cuốn sách này, hiện trên card',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+
+  @ApiPropertyOptional({
     description: 'Danh sách tag, phân tách bởi dấu phẩy',
     example: 'BE,DE,SA',
   })

@@ -14,6 +14,7 @@ import { MAX_PDF_SIZE_BYTES } from '../../common/utils/storage';
 import { CategoriesService } from '../categories/categories.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
+import { UpdateBookStatusDto } from './dto/update-book-status.dto';
 
 export interface UploadedBookFiles {
   file?: Express.Multer.File[];
@@ -75,6 +76,7 @@ export class BooksService {
       title: dto.title,
       author: dto.author,
       blurb: dto.blurb,
+      note: dto.note,
       tags: dto.tags,
       fileUrl: resolvedFile.fileUrl,
       fileOriginalName: resolvedFile.fileOriginalName,
@@ -117,6 +119,16 @@ export class BooksService {
     }
 
     return saved;
+  }
+
+  // the one mutation anyone browsing the site can trigger, not just
+  // whoever's adding books — kept separate from update() so it never
+  // touches files or requires multipart parsing
+  async updateStatus(id: string, dto: UpdateBookStatusDto): Promise<Book> {
+    const book = await this.findOne(id);
+    if (dto.readStatus !== undefined) book.readStatus = dto.readStatus;
+    if (dto.isFavorite !== undefined) book.isFavorite = dto.isFavorite;
+    return this.booksRepo.save(book);
   }
 
   async remove(id: string): Promise<void> {

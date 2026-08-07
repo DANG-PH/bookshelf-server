@@ -54,9 +54,12 @@ export class CatalogService {
             title: b.title,
             author: b.author,
             blurb: b.blurb,
+            note: b.note,
             tags: b.tags,
             file: resolveAsset(b.fileUrl),
             cover: resolveAsset(b.coverUrl),
+            readStatus: b.readStatus,
+            isFavorite: b.isFavorite,
             // "Mới" is computed on the frontend from this instead of a
             // stored flag — no cron/queue needed to expire it after a day
             createdAt: b.createdAt,
