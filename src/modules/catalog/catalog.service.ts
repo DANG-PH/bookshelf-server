@@ -57,7 +57,9 @@ export class CatalogService {
             tags: b.tags,
             file: resolveAsset(b.fileUrl),
             cover: resolveAsset(b.coverUrl),
-            isNew: b.isNew,
+            // "Mới" is computed on the frontend from this instead of a
+            // stored flag — no cron/queue needed to expire it after a day
+            createdAt: b.createdAt,
           })),
       })),
     };

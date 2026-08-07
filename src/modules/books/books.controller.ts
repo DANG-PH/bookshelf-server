@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { BookLookupService } from './book-lookup.service';
 import { BooksService } from './books.service';
 import type { UploadedBookFiles } from './books.service';
 import { CreateBookDto } from './dto/create-book.dto';
@@ -29,11 +30,28 @@ const UPLOAD_FIELDS = [
 @ApiBearerAuth()
 @Controller('books')
 export class BooksController {
-  constructor(private readonly booksService: BooksService) {}
+  constructor(
+    private readonly booksService: BooksService,
+    private readonly bookLookupService: BookLookupService,
+  ) {}
 
   @Get()
   findAll(@Query('categoryId') categoryId?: string) {
     return this.booksService.findAll(categoryId);
+  }
+
+  // must stay ahead of the ":id" route below, or "/books/lookup" would be
+  // parsed as a (invalid) book id instead of matching this route
+  @Get('lookup')
+  lookup(@Query('q') q?: string) {
+    const query = (q || '').trim();
+    if (query.length < 2) return [];
+    return this.bookLookupService.search(query);
+  }
+
+  @Get('lookup/detail')
+  lookupDetail(@Query('workKey') workKey: string) {
+    return this.bookLookupService.describe(workKey);
   }
 
   @Get(':id')

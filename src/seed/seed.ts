@@ -197,7 +197,6 @@ async function run() {
           tags: b.tags,
           fileUrl,
           coverUrl,
-          isNew: b.isNew ?? false,
         }),
       );
       console.log(`  ✓ "${b.title}"`);

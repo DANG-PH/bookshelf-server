@@ -53,9 +53,6 @@ export class Book {
   @Column({ nullable: true })
   coverUrl: string;
 
-  @Column({ default: false })
-  isNew: boolean;
-
   @CreateDateColumn()
   createdAt: Date;
 

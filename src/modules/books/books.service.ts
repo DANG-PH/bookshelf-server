@@ -76,7 +76,6 @@ export class BooksService {
       author: dto.author,
       blurb: dto.blurb,
       tags: dto.tags,
-      isNew: dto.isNew ?? true,
       fileUrl: resolvedFile.fileUrl,
       fileOriginalName: resolvedFile.fileOriginalName,
       coverUrl: this.resolveCoverUrl(files, dto),

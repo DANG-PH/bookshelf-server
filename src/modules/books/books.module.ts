@@ -9,6 +9,7 @@ import {
 } from '../../common/utils/storage';
 import { Book } from '../../database/entities/book.entity';
 import { CategoriesModule } from '../categories/categories.module';
+import { BookLookupService } from './book-lookup.service';
 import { BooksController } from './books.controller';
 import { BooksService } from './books.service';
 
@@ -29,7 +30,7 @@ import { BooksService } from './books.service';
     }),
   ],
   controllers: [BooksController],
-  providers: [BooksService],
+  providers: [BooksService, BookLookupService],
   exports: [BooksService],
 })
 export class BooksModule {}

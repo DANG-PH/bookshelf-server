@@ -1,7 +1,6 @@
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
-  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -80,10 +79,4 @@ export class CreateBookDto {
   @IsOptional()
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   pdfUrl?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true')
-  @IsBoolean()
-  isNew?: boolean;
 }
