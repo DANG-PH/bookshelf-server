@@ -12,6 +12,7 @@ import { BooksModule } from './modules/books/books.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { FilesModule } from './modules/files/files.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { DiaryModule } from './modules/diary/diary.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -29,6 +30,7 @@ import { HealthController } from './health.controller';
     SettingsModule,
     FilesModule,
     CatalogModule,
+    DiaryModule,
   ],
   controllers: [HealthController],
   providers: [

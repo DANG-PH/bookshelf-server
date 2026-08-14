@@ -76,6 +76,12 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PUBLIC_URL: string = '';
+
+  // Optional — Discord webhook for login notifications. Leave unset to
+  // disable (DiscordAlertService silently no-ops without it).
+  @IsOptional()
+  @IsString()
+  DISCORD_WEBHOOK_URL?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

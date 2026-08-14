@@ -6,21 +6,33 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { DiscordAlertService } from '../notifications/discord-alert.service';
+
+export interface LoginRequestMeta {
+  ip: string;
+  userAgent: string;
+}
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly config: ConfigService,
     private readonly jwt: JwtService,
+    private readonly discordAlert: DiscordAlertService,
   ) {}
 
   async login(
     pin: string,
+    meta: LoginRequestMeta,
   ): Promise<{ accessToken: string; expiresIn: string }> {
     const valid = await this.verifyPin(pin);
     if (!valid) {
+      // fire-and-forget: a Discord hiccup should never break the login flow
+      this.discordAlert.loginFailed(meta).catch(() => undefined);
       throw new UnauthorizedException('Sai mã PIN');
     }
+
+    this.discordAlert.loginSuccess(meta).catch(() => undefined);
 
     const accessToken = await this.jwt.signAsync({ sub: 'curator' });
     return {

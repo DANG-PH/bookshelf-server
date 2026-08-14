@@ -30,4 +30,12 @@ export class UpdateSettingsDto {
   @IsString()
   @MaxLength(20)
   updatedLabel?: string;
+
+  @ApiPropertyOptional({
+    description: 'Tên hiển thị của người còn lại, dùng cho nhật ký 2 người',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  partnerName?: string;
 }

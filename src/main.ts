@@ -4,6 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { mkdirSync } from 'fs';
+import type { Express } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -13,6 +14,10 @@ async function bootstrap() {
   const uploadDir = config.get<string>('UPLOAD_DIR', './uploads');
   mkdirSync(`${uploadDir}/books`, { recursive: true });
   mkdirSync(`${uploadDir}/covers`, { recursive: true });
+
+  // behind a single reverse-proxy hop (nginx) in production — without this,
+  // req.ip resolves to nginx's own address instead of the real client's
+  (app.getHttpAdapter().getInstance() as Express).set('trust proxy', 1);
 
   app.use(helmet());
   app.enableCors({

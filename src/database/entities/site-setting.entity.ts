@@ -21,6 +21,11 @@ export class SiteSetting {
   @Column({ nullable: true })
   updatedLabel: string;
 
+  // display name for the "other" diary author — curatorName is already
+  // the first author's name, this is the second one's
+  @Column({ default: 'Vy' })
+  partnerName: string;
+
   @UpdateDateColumn()
   updatedAt: Date;
 }
