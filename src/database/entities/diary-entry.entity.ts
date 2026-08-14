@@ -29,6 +29,6 @@ export class DiaryEntry {
   @Column({ type: 'varchar', nullable: true })
   mood: string;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

@@ -26,6 +26,6 @@ export class SiteSetting {
   @Column({ default: 'Vy' })
   partnerName: string;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 }

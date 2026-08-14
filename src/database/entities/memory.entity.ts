@@ -29,6 +29,6 @@ export class Memory {
   @Column({ type: 'varchar', nullable: true })
   addedBy: 'me' | 'partner';
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

@@ -34,9 +34,9 @@ export class Category {
   @OneToMany(() => Book, (book) => book.category)
   books: Book[];
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 }

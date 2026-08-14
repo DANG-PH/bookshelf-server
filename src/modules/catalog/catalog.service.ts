@@ -27,8 +27,17 @@ export class CatalogService {
       return `${filesBase}/${path}`;
     };
 
+    // explicit timeZone here rather than relying on the server process's
+    // ambient TZ — the server should stay on UTC internally (that's what
+    // keeps stored timestamps unambiguous); only human-facing text like
+    // this needs to be converted to Vietnam time, and only right here
+    const vnYear = new Date().toLocaleString('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+    });
+
     return {
-      updated: settings.updatedLabel ?? String(new Date().getFullYear()),
+      updated: settings.updatedLabel ?? vnYear,
       curator: settings.curatorName
         ? {
             name: settings.curatorName,
