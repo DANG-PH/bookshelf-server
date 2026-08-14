@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DiaryEntry } from '../../database/entities/diary-entry.entity';
+import {
+  DiaryAuthor,
+  DiaryEntry,
+} from '../../database/entities/diary-entry.entity';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
 import { QueryDiaryDto } from './dto/query-diary.dto';
 import { UpdateDiaryEntryDto } from './dto/update-diary-entry.dto';
@@ -59,9 +62,12 @@ export class DiaryService {
     return this.diaryRepo.save(entry);
   }
 
-  async toggleLike(id: string): Promise<DiaryEntry> {
+  async toggleLike(id: string, author: DiaryAuthor): Promise<DiaryEntry> {
     const entry = await this.findOne(id);
-    entry.liked = !entry.liked;
+    const likedBy = new Set(entry.likedBy || []);
+    if (likedBy.has(author)) likedBy.delete(author);
+    else likedBy.add(author);
+    entry.likedBy = [...likedBy];
     return this.diaryRepo.save(entry);
   }
 

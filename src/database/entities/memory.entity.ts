@@ -35,8 +35,10 @@ export class Memory {
   @Column({ type: 'varchar', nullable: true })
   addedBy: 'me' | 'partner';
 
-  @Column({ default: false })
-  liked: boolean;
+  // per-author, same reasoning as DiaryEntry.likedBy — each person's tym
+  // is independent, not a single shared toggle
+  @Column({ type: 'simple-array', nullable: true })
+  likedBy: ('me' | 'partner')[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

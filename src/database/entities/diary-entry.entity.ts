@@ -30,9 +30,11 @@ export class DiaryEntry {
   @Column({ type: 'varchar', nullable: true })
   mood: string;
 
-  // a simple heart/"tym" from whoever's reading — no comments, just this
-  @Column({ default: false })
-  liked: boolean;
+  // which of the two people have hearted this entry — tracked per-author
+  // (not a single shared flag) so one person's tym can't silently un-heart
+  // the other's; the frontend counts array length for the "x tym" badge
+  @Column({ type: 'simple-array', nullable: true })
+  likedBy: DiaryAuthor[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

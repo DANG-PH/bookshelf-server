@@ -41,9 +41,12 @@ export class MemoriesService {
     return this.memoriesRepo.save(memory);
   }
 
-  async toggleLike(id: string): Promise<Memory> {
+  async toggleLike(id: string, author: 'me' | 'partner'): Promise<Memory> {
     const memory = await this.findOne(id);
-    memory.liked = !memory.liked;
+    const likedBy = new Set(memory.likedBy || []);
+    if (likedBy.has(author)) likedBy.delete(author);
+    else likedBy.add(author);
+    memory.likedBy = [...likedBy];
     return this.memoriesRepo.save(memory);
   }
 

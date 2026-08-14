@@ -15,6 +15,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { DiaryService } from './diary.service';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
 import { QueryDiaryDto } from './dto/query-diary.dto';
+import { ToggleLikeDto } from './dto/toggle-like.dto';
 import { UpdateDiaryEntryDto } from './dto/update-diary-entry.dto';
 
 @ApiTags('diary')
@@ -34,8 +35,11 @@ export class DiaryController {
   }
 
   @Patch(':id/like')
-  toggleLike(@Param('id', ParseUUIDPipe) id: string) {
-    return this.diaryService.toggleLike(id);
+  toggleLike(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ToggleLikeDto,
+  ) {
+    return this.diaryService.toggleLike(id, dto.author);
   }
 
   @Patch(':id')
