@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -27,6 +28,11 @@ export class MemoriesController {
   @Post()
   create(@Body() dto: CreateMemoryDto) {
     return this.memoriesService.create(dto);
+  }
+
+  @Patch(':id/like')
+  toggleLike(@Param('id', ParseUUIDPipe) id: string) {
+    return this.memoriesService.toggleLike(id);
   }
 
   @Delete(':id')

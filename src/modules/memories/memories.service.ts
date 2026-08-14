@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Memory } from '../../database/entities/memory.entity';
 import { CreateMemoryDto } from './dto/create-memory.dto';
+import { extractYouTubeId } from './youtube.util';
 
 @Injectable()
 export class MemoriesService {
@@ -21,13 +26,35 @@ export class MemoriesService {
   }
 
   create(dto: CreateMemoryDto): Promise<Memory> {
-    const memory = this.memoriesRepo.create(dto);
+    const { youtubeUrl, ...rest } = dto;
+    let youtubeId: string | undefined;
+    if (youtubeUrl) {
+      const id = extractYouTubeId(youtubeUrl);
+      if (!id) {
+        throw new BadRequestException(
+          'Link YouTube không hợp lệ — dán link video hoặc ID 11 ký tự',
+        );
+      }
+      youtubeId = id;
+    }
+    const memory = this.memoriesRepo.create({ ...rest, youtubeId });
+    return this.memoriesRepo.save(memory);
+  }
+
+  async toggleLike(id: string): Promise<Memory> {
+    const memory = await this.findOne(id);
+    memory.liked = !memory.liked;
     return this.memoriesRepo.save(memory);
   }
 
   async remove(id: string): Promise<void> {
+    const memory = await this.findOne(id);
+    await this.memoriesRepo.remove(memory);
+  }
+
+  private async findOne(id: string): Promise<Memory> {
     const memory = await this.memoriesRepo.findOne({ where: { id } });
     if (!memory) throw new NotFoundException('Không tìm thấy kỷ niệm này');
-    await this.memoriesRepo.remove(memory);
+    return memory;
   }
 }

@@ -32,6 +32,15 @@ export class CreateMemoryDto {
   @IsUrl()
   photoUrl?: string;
 
+  @ApiPropertyOptional({
+    description: 'Link YouTube hoặc video ID — server tự tách lấy ID',
+    example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  youtubeUrl?: string;
+
   @ApiPropertyOptional({ enum: MEMORY_AUTHORS })
   @IsOptional()
   @IsIn(MEMORY_AUTHORS)

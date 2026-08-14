@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 
 // 'me' = the curator (curatorName in SiteSetting), 'partner' = the other
@@ -29,6 +30,13 @@ export class DiaryEntry {
   @Column({ type: 'varchar', nullable: true })
   mood: string;
 
+  // a simple heart/"tym" from whoever's reading — no comments, just this
+  @Column({ default: false })
+  liked: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updatedAt: Date;
 }

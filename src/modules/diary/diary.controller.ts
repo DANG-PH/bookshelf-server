@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { DiaryService } from './diary.service';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
 import { QueryDiaryDto } from './dto/query-diary.dto';
+import { UpdateDiaryEntryDto } from './dto/update-diary-entry.dto';
 
 @ApiTags('diary')
 @ApiBearerAuth()
@@ -29,6 +31,19 @@ export class DiaryController {
   @Post()
   create(@Body() dto: CreateDiaryEntryDto) {
     return this.diaryService.create(dto);
+  }
+
+  @Patch(':id/like')
+  toggleLike(@Param('id', ParseUUIDPipe) id: string) {
+    return this.diaryService.toggleLike(id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDiaryEntryDto,
+  ) {
+    return this.diaryService.update(id, dto);
   }
 
   @Delete(':id')

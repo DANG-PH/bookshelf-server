@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { DiaryEntry } from '../../database/entities/diary-entry.entity';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
 import { QueryDiaryDto } from './dto/query-diary.dto';
+import { UpdateDiaryEntryDto } from './dto/update-diary-entry.dto';
 
 export interface PaginatedDiaryEntries {
   items: DiaryEntry[];
@@ -52,9 +53,26 @@ export class DiaryService {
     return this.diaryRepo.save(entry);
   }
 
+  async update(id: string, dto: UpdateDiaryEntryDto): Promise<DiaryEntry> {
+    const entry = await this.findOne(id);
+    Object.assign(entry, dto);
+    return this.diaryRepo.save(entry);
+  }
+
+  async toggleLike(id: string): Promise<DiaryEntry> {
+    const entry = await this.findOne(id);
+    entry.liked = !entry.liked;
+    return this.diaryRepo.save(entry);
+  }
+
   async remove(id: string): Promise<void> {
+    const entry = await this.findOne(id);
+    await this.diaryRepo.remove(entry);
+  }
+
+  private async findOne(id: string): Promise<DiaryEntry> {
     const entry = await this.diaryRepo.findOne({ where: { id } });
     if (!entry) throw new NotFoundException('Không tìm thấy dòng nhật ký');
-    await this.diaryRepo.remove(entry);
+    return entry;
   }
 }
