@@ -13,6 +13,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { FilesModule } from './modules/files/files.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { DiaryModule } from './modules/diary/diary.module';
+import { MemoriesModule } from './modules/memories/memories.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -31,6 +32,7 @@ import { HealthController } from './health.controller';
     FilesModule,
     CatalogModule,
     DiaryModule,
+    MemoriesModule,
   ],
   controllers: [HealthController],
   providers: [

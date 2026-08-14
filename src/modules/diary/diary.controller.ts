@@ -8,10 +8,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { DiaryService } from './diary.service';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
+import { QueryDiaryDto } from './dto/query-diary.dto';
 
 @ApiTags('diary')
 @ApiBearerAuth()
@@ -20,8 +22,8 @@ export class DiaryController {
   constructor(private readonly diaryService: DiaryService) {}
 
   @Get()
-  findAll() {
-    return this.diaryService.findAll();
+  findAll(@Query() query: QueryDiaryDto) {
+    return this.diaryService.findAll(query);
   }
 
   @Post()

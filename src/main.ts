@@ -1,3 +1,10 @@
+// Pin the whole process to Vietnam time before anything else runs — the
+// deploy host's ambient timezone is not guaranteed (most VPS/cloud images
+// default to UTC), and every unguarded `new Date()` call elsewhere in the
+// app (getFullYear(), toLocaleString() without an explicit timeZone, etc.)
+// would otherwise silently follow whatever that happens to be.
+process.env.TZ = 'Asia/Ho_Chi_Minh';
+
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';

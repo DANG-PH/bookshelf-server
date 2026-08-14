@@ -3,6 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DiaryEntry } from '../../database/entities/diary-entry.entity';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
+import { QueryDiaryDto } from './dto/query-diary.dto';
+
+export interface PaginatedDiaryEntries {
+  items: DiaryEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
 
 @Injectable()
 export class DiaryService {
@@ -11,8 +19,32 @@ export class DiaryService {
     private readonly diaryRepo: Repository<DiaryEntry>,
   ) {}
 
-  findAll(): Promise<DiaryEntry[]> {
-    return this.diaryRepo.find({ order: { createdAt: 'DESC' } });
+  async findAll(query: QueryDiaryDto): Promise<PaginatedDiaryEntries> {
+    const limit = query.limit ?? 30;
+    const offset = query.offset ?? 0;
+
+    const qb = this.diaryRepo
+      .createQueryBuilder('entry')
+      .orderBy('entry.createdAt', 'DESC')
+      .skip(offset)
+      .take(limit);
+
+    if (query.author) {
+      qb.andWhere('entry.author = :author', { author: query.author });
+    }
+    if (query.startDate) {
+      qb.andWhere('entry.createdAt >= :startDate', {
+        startDate: `${query.startDate} 00:00:00`,
+      });
+    }
+    if (query.endDate) {
+      qb.andWhere('entry.createdAt <= :endDate', {
+        endDate: `${query.endDate} 23:59:59`,
+      });
+    }
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, limit, offset };
   }
 
   create(dto: CreateDiaryEntryDto): Promise<DiaryEntry> {
