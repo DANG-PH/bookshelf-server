@@ -5,7 +5,9 @@ import {
   IsIn,
   IsInt,
   IsOptional,
+  IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { DIARY_AUTHORS } from './create-diary-entry.dto';
@@ -50,4 +52,10 @@ export class QueryDiaryDto {
   @IsOptional()
   @IsIn(DIARY_AUTHORS)
   author?: (typeof DIARY_AUTHORS)[number];
+
+  @ApiPropertyOptional({ description: 'Tìm trong tiêu đề và nội dung' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
 }

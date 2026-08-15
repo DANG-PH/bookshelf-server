@@ -46,6 +46,11 @@ export class DiaryService {
         endDate: `${query.endDate} 23:59:59`,
       });
     }
+    if (query.q) {
+      qb.andWhere('(entry.title ILIKE :q OR entry.content ILIKE :q)', {
+        q: `%${query.q}%`,
+      });
+    }
 
     const [items, total] = await qb.getManyAndCount();
     return { items, total, limit, offset };

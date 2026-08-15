@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Memory } from '../../database/entities/memory.entity';
 import { CreateMemoryDto } from './dto/create-memory.dto';
+import { UpdateMemoryDto } from './dto/update-memory.dto';
 import { extractYouTubeId } from './youtube.util';
 
 @Injectable()
@@ -38,6 +39,26 @@ export class MemoriesService {
       youtubeId = id;
     }
     const memory = this.memoriesRepo.create({ ...rest, youtubeId });
+    return this.memoriesRepo.save(memory);
+  }
+
+  async update(id: string, dto: UpdateMemoryDto): Promise<Memory> {
+    const memory = await this.findOne(id);
+    const { youtubeUrl, ...rest } = dto;
+    Object.assign(memory, rest);
+    if (youtubeUrl !== undefined) {
+      if (!youtubeUrl) {
+        memory.youtubeId = null;
+      } else {
+        const id2 = extractYouTubeId(youtubeUrl);
+        if (!id2) {
+          throw new BadRequestException(
+            'Link YouTube không hợp lệ — dán link video hoặc ID 11 ký tự',
+          );
+        }
+        memory.youtubeId = id2;
+      }
+    }
     return this.memoriesRepo.save(memory);
   }
 

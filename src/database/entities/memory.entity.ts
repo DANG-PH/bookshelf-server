@@ -30,7 +30,7 @@ export class Memory {
   // write time so the frontend can build thumbnail/embed URLs from it
   // directly (https://img.youtube.com/vi/{id}/..., youtube.com/embed/{id})
   @Column({ nullable: true })
-  youtubeId: string;
+  youtubeId: string | null;
 
   @Column({ type: 'varchar', nullable: true })
   addedBy: 'me' | 'partner';

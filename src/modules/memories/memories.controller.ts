@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { MemoriesService } from './memories.service';
 import { CreateMemoryDto } from './dto/create-memory.dto';
+import { UpdateMemoryDto } from './dto/update-memory.dto';
 import { ToggleLikeDto } from './dto/toggle-like.dto';
 
 @ApiTags('memories')
@@ -37,6 +38,11 @@ export class MemoriesController {
     @Body() dto: ToggleLikeDto,
   ) {
     return this.memoriesService.toggleLike(id, dto.author);
+  }
+
+  @Patch(':id')
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateMemoryDto) {
+    return this.memoriesService.update(id, dto);
   }
 
   @Delete(':id')
