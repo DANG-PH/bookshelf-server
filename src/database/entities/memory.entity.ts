@@ -29,7 +29,7 @@ export class Memory {
   // just the 11-char video ID, never the raw URL — normalized once at
   // write time so the frontend can build thumbnail/embed URLs from it
   // directly (https://img.youtube.com/vi/{id}/..., youtube.com/embed/{id})
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   youtubeId: string | null;
 
   @Column({ type: 'varchar', nullable: true })
