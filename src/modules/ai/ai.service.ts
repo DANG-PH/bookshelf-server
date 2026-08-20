@@ -312,6 +312,13 @@ export class AiService implements OnModuleInit {
         return { message: cached.message };
       }
 
+      // runs on every question, not just ones that look like they're
+      // about the library itself — RAG chunks only ever cover what's
+      // *inside* books, so without this the model has zero ground truth
+      // for "how many books do you have" and just guesses (this is what
+      // produced the "500 books" answer for a 14-book library)
+      const libraryFacts = await this.buildLibraryFactsBlock();
+
       // runs no matter what happens to the AI calls below — it's a plain
       // DB query, not an API call, so it still finds "Ove" by title even
       // when the book hasn't finished vector-indexing yet, or the AI is
@@ -348,6 +355,8 @@ export class AiService implements OnModuleInit {
       const ragPrompt = `
 ${systemPrompt}
 
+${libraryFacts}
+
 ${
   context
     ? `Một vài sách/đoạn trích trong thư viện có thể liên quan đến câu hỏi này — dùng để gợi ý, không phải để giới hạn câu trả lời:\n---\n${context}\n---\n`
@@ -356,9 +365,11 @@ ${
 Câu hỏi: ${message}
 
 Hướng dẫn trả lời:
+- Khi được hỏi về số lượng sách, sách nào có trong thư viện, hoặc sách thuộc chủ đề gì, PHẢI trả lời đúng theo "Thư viện hiện có..." ở trên — tuyệt đối không tự đoán con số hay bịa tên sách không có trong danh sách đó
+- Nếu không chắc chắn về một thông tin cụ thể (số liệu, tên riêng, sự kiện), đừng đoán bừa — nói rõ là không chắc thay vì đưa ra con số/tên sai
 - Trả lời câu hỏi một cách tự nhiên, đầy đủ bằng kiến thức của bạn — không cần bó buộc chỉ trong các đoạn trích ở trên
 - Nếu có sách trong thư viện liên quan (xem phần trên), khéo léo nhắc đến cuốn đó như một gợi ý đọc thêm trong câu trả lời
-- QUAN TRỌNG: chỉ được nói một cuốn sách "có trong thư viện" nếu nó thực sự xuất hiện trong phần thông tin sách ở trên. Nếu nhắc đến bất kỳ sách/tác giả nào khác từ kiến thức chung của bạn, phải nói rõ đó KHÔNG có trong thư viện này (vd: "cuốn này thư viện chưa có nhé") — đừng bao giờ để người đọc hiểu nhầm là một cuốn sách đang có sẵn để đọc ngay trong khi thực ra không phải
+- QUAN TRỌNG: chỉ được nói một cuốn sách "có trong thư viện" nếu nó thực sự xuất hiện trong "Thư viện hiện có..." hoặc phần thông tin sách ở trên. Nếu nhắc đến bất kỳ sách/tác giả nào khác từ kiến thức chung của bạn, phải nói rõ đó KHÔNG có trong thư viện này (vd: "cuốn này thư viện chưa có nhé") — đừng bao giờ để người đọc hiểu nhầm là một cuốn sách đang có sẵn để đọc ngay trong khi thực ra không phải
 - Nếu không có sách nào liên quan, cứ trả lời bình thường bằng kiến thức của bạn — không cần nói gì về việc thư viện có hay không có sách
 - Trả lời ngắn gọn, dùng gạch đầu dòng nếu có nhiều ý, có thể dùng **in đậm** cho từ khoá quan trọng
       `.trim();
@@ -455,6 +466,28 @@ Hướng dẫn trả lời:
     ];
     lines.push(b.blurb || b.note || '(chưa có mô tả)');
     return lines.join('\n');
+  }
+
+  // ground truth for "thư viện có bao nhiêu sách" / "sách nào có trong
+  // thư viện" type questions — RAG chunk/keyword search only ever surface
+  // content *inside* books, never facts about the collection as a whole,
+  // so without this the model has nothing to go on but a guess
+  private async buildLibraryFactsBlock(): Promise<string> {
+    const LIST_CAP = 200;
+    const books = await this.booksRepo.find({
+      relations: { category: true },
+      order: { title: 'ASC' },
+    });
+    const lines = books.slice(0, LIST_CAP).map((b) => {
+      const author = b.author ? ` — ${b.author}` : '';
+      const category = b.category?.title ? ` (${b.category.title})` : '';
+      return `- "${b.title}"${author}${category}`;
+    });
+    const truncated =
+      books.length > LIST_CAP
+        ? `\n... và ${books.length - LIST_CAP} cuốn khác`
+        : '';
+    return `Thư viện hiện có đúng ${books.length} cuốn sách. Toàn bộ danh sách:\n${lines.join('\n')}${truncated}`;
   }
 
   // used only when the model itself couldn't be reached at all — a plain
