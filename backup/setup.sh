@@ -5,6 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "========================================"
 echo "  Setup backup bookshelf-server"
@@ -12,19 +13,19 @@ echo "========================================"
 echo ""
 
 # ============ CHECK .env ============
-if [ ! -f "$SCRIPT_DIR/.env" ]; then
-  echo "ERROR: Chưa có file $SCRIPT_DIR/.env"
+if [ ! -f "$REPO_ROOT/.env" ]; then
+  echo "ERROR: Chưa có file $REPO_ROOT/.env"
   echo ""
   echo "Hãy chạy:"
-  echo "  cp $SCRIPT_DIR/.env.example $SCRIPT_DIR/.env"
-  echo "  nano $SCRIPT_DIR/.env       # điền password và config"
+  echo "  cp $REPO_ROOT/.env.example $REPO_ROOT/.env"
+  echo "  nano $REPO_ROOT/.env       # điền password và config"
   echo ""
   echo "Rồi chạy lại setup.sh"
   exit 1
 fi
 
 set -a
-source "$SCRIPT_DIR/.env"
+source "$REPO_ROOT/.env"
 set +a
 
 echo "✓ Tìm thấy .env"

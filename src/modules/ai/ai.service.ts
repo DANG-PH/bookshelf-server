@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import * as crypto from 'crypto';
 import { promises as fs } from 'fs';
 import { join } from 'path';
@@ -15,14 +15,29 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 // through Gemini's per-minute rate limit on first boot
 const EMBED_DELAY_MS = 200;
 
+export interface AiStatus {
+  configured: boolean;
+  indexedChunks: number;
+  indexedBooks: number;
+  totalBooks: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
 // RAG chatbot over the PDFs already sitting in the library — each book's
 // text gets chunked + embedded once and cached to disk; asking a
 // question embeds the question, finds the closest chunks, and hands
 // them to the model as context instead of letting it guess.
+//
+// Uses @google/genai (the current, actively-maintained SDK) — the older
+// @google/generative-ai package it started on was fully deprecated by
+// Google in August 2025 and stopped getting bug fixes, which is exactly
+// the kind of thing that causes embedding calls to fail silently months
+// later with nothing but a swallowed per-chunk warning to show for it.
 @Injectable()
 export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
-  private readonly genAI: GoogleGenerativeAI | null;
+  private readonly genAI: GoogleGenAI | null;
   private readonly vectorStore = new InMemoryVectorStore();
   private readonly responseCache = new Map<
     string,
@@ -30,6 +45,10 @@ export class AiService implements OnModuleInit {
   >();
   private readonly uploadDir: string;
   private readonly indexPath: string;
+  // surfaced via GET /ai/status so a stuck/empty index can be diagnosed
+  // without needing to go dig through `pm2 logs`
+  private lastSyncAt: Date | null = null;
+  private lastError: string | null = null;
 
   // Chat model, tried in order — falls through on quota/overload errors
   // instead of failing the whole request.
@@ -57,7 +76,7 @@ export class AiService implements OnModuleInit {
     @InjectRepository(Book) private readonly booksRepo: Repository<Book>,
   ) {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
-    this.genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+    this.genAI = apiKey ? new GoogleGenAI({ apiKey }) : null;
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads');
     this.indexPath = join(this.uploadDir, 'rag-index.json');
   }
@@ -72,9 +91,22 @@ export class AiService implements OnModuleInit {
     // fire-and-forget: indexing a whole library can take a while (one
     // embedding call per chunk), and the rest of the API shouldn't wait
     // on it to finish booting
-    this.syncIndexWithLibrary().catch((err: Error) =>
-      this.logger.error(`[AI] đánh index thất bại: ${err.message}`),
-    );
+    this.syncIndexWithLibrary().catch((err: Error) => {
+      this.lastError = err.message;
+      this.logger.error(`[AI] đánh index thất bại: ${err.message}`);
+    });
+  }
+
+  async getStatus(): Promise<AiStatus> {
+    const totalBooks = await this.booksRepo.count();
+    return {
+      configured: Boolean(this.genAI),
+      indexedChunks: this.vectorStore.size,
+      indexedBooks: this.vectorStore.indexedBookIds.size,
+      totalBooks,
+      lastSyncAt: this.lastSyncAt ? this.lastSyncAt.toISOString() : null,
+      lastError: this.lastError,
+    };
   }
 
   // reconciles the persisted index against whatever books actually exist
@@ -97,14 +129,16 @@ export class AiService implements OnModuleInit {
     if (missing.length) {
       this.logger.log(`[AI] ${missing.length} sách chưa đánh index — bắt đầu…`);
       for (const book of missing) {
-        await this.indexBook(book).catch((err: Error) =>
+        await this.indexBook(book).catch((err: Error) => {
+          this.lastError = `"${book.title}": ${err.message}`;
           this.logger.warn(
             `[AI] Không đánh index được "${book.title}": ${err.message}`,
-          ),
-        );
+          );
+        });
       }
     }
 
+    this.lastSyncAt = new Date();
     await this.persistIndex();
   }
 
@@ -136,13 +170,14 @@ export class AiService implements OnModuleInit {
     try {
       chunks = await chunkPdf(filePath);
     } catch (err) {
-      this.logger.warn(
-        `[AI] Không đọc được PDF của "${book.title}": ${(err as Error).message}`,
-      );
+      const msg = `Không đọc được PDF của "${book.title}": ${(err as Error).message}`;
+      this.lastError = msg;
+      this.logger.warn(`[AI] ${msg}`);
       return;
     }
 
     const embedded: EmbeddedChunk[] = [];
+    let lastChunkError: string | null = null;
     for (const text of chunks) {
       try {
         const embedding = await this.embedText(text);
@@ -153,16 +188,23 @@ export class AiService implements OnModuleInit {
           embedding,
         });
       } catch (err) {
+        lastChunkError = (err as Error).message;
         this.logger.warn(
-          `[AI] Bỏ qua 1 đoạn của "${book.title}": ${(err as Error).message}`,
+          `[AI] Bỏ qua 1 đoạn của "${book.title}": ${lastChunkError}`,
         );
       }
       await new Promise((r) => setTimeout(r, EMBED_DELAY_MS));
     }
 
+    if (embedded.length === 0 && chunks.length > 0) {
+      // every single chunk failed to embed — almost always an API/auth
+      // problem, not a fluke, so this is worth remembering for /ai/status
+      this.lastError = `"${book.title}": tất cả ${chunks.length} đoạn đều embed lỗi (${lastChunkError ?? 'không rõ lý do'})`;
+    }
+
     this.vectorStore.add(embedded);
     this.logger.log(
-      `[AI] Đã đánh index "${book.title}" (${embedded.length} đoạn)`,
+      `[AI] Đã đánh index "${book.title}" (${embedded.length}/${chunks.length} đoạn)`,
     );
   }
 
@@ -173,11 +215,12 @@ export class AiService implements OnModuleInit {
     if (!this.genAI) return;
     this.indexBook(book)
       .then(() => this.persistIndex())
-      .catch((err: Error) =>
+      .catch((err: Error) => {
+        this.lastError = `"${book.title}": ${err.message}`;
         this.logger.warn(
           `[AI] Đánh index nền thất bại cho "${book.title}": ${err.message}`,
-        ),
-      );
+        );
+      });
   }
 
   removeBookIndexInBackground(bookId: string): void {
@@ -213,6 +256,7 @@ export class AiService implements OnModuleInit {
       try {
         queryEmbedding = await this.embedText(message);
       } catch (err) {
+        this.lastError = `embed câu hỏi: ${(err as Error).message}`;
         this.logger.error(
           `[AI] embed câu hỏi thất bại: ${(err as Error).message}`,
         );
@@ -247,34 +291,43 @@ Hướng dẫn trả lời:
 - Trả lời ngắn gọn, dùng gạch đầu dòng nếu có nhiều ý
       `.trim();
 
-      const result = await this.generateWithFallback(ragPrompt);
-      if (!result) {
+      const replyText = await this.generateWithFallback(ragPrompt);
+      if (!replyText) {
         return { message: 'AI đang quá tải, thử lại sau khoảng 1 phút nhé.' };
       }
 
-      const replyText = result.response.text();
       this.responseCache.set(cacheKey, {
         message: replyText,
         expiresAt: Date.now() + CACHE_TTL_MS,
       });
       return { message: replyText };
     } catch (err) {
+      this.lastError = (err as Error).message;
       this.logger.error(`[AI] chatCompletion lỗi: ${(err as Error).message}`);
       return { message: 'Có lỗi xảy ra, thử lại nhé.' };
     }
   }
 
   private async embedText(text: string): Promise<number[]> {
-    const model = this.genAI!.getGenerativeModel({ model: this.EMBED_MODEL });
-    const result = await model.embedContent(text);
-    return result.embedding.values;
+    const result = await this.genAI!.models.embedContent({
+      model: this.EMBED_MODEL,
+      contents: text,
+    });
+    const values = result.embeddings?.[0]?.values;
+    if (!values || values.length === 0) {
+      throw new Error('Gemini trả về embedding rỗng');
+    }
+    return values;
   }
 
-  private async generateWithFallback(prompt: string) {
+  private async generateWithFallback(prompt: string): Promise<string | null> {
     for (const modelName of this.CHAT_MODELS) {
       try {
-        const model = this.genAI!.getGenerativeModel({ model: modelName });
-        return await model.generateContent(prompt);
+        const response = await this.genAI!.models.generateContent({
+          model: modelName,
+          contents: prompt,
+        });
+        if (response.text) return response.text;
       } catch (err) {
         const status =
           (err as { status?: number }).status ?? (err as Error).message;

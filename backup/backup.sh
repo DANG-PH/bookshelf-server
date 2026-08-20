@@ -5,16 +5,17 @@ set -euo pipefail
 
 # ============ ĐỊNH VỊ ============
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKUP_DIR="$SCRIPT_DIR/data"
 
 # ============ LOAD CONFIG ============
-if [ ! -f "$SCRIPT_DIR/.env" ]; then
-  echo "ERROR: Không tìm thấy file $SCRIPT_DIR/.env"
+if [ ! -f "$REPO_ROOT/.env" ]; then
+  echo "ERROR: Không tìm thấy file $REPO_ROOT/.env"
   echo "Hãy copy .env.example thành .env và điền thông tin."
   exit 1
 fi
 set -a
-source "$SCRIPT_DIR/.env"
+source "$REPO_ROOT/.env"
 set +a
 
 DATE=$(date +%F_%H%M)
@@ -33,6 +34,7 @@ echo "$LOG_PREFIX [Postgres] Done. Size: $(du -h "$BACKUP_DIR/bookdb_$DATE.sql.g
 
 # ============ PUSH GITHUB ============
 echo "$LOG_PREFIX [GitHub] Đang copy & push..."
+mkdir -p "$GITHUB_BACKUP_DIR"
 cp "$BACKUP_DIR"/*_$DATE.* "$GITHUB_BACKUP_DIR/"
 cd "$GITHUB_BACKUP_DIR/.."
 git add data/
