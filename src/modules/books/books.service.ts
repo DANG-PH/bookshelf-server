@@ -11,6 +11,7 @@ import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Book } from '../../database/entities/book.entity';
 import { MAX_PDF_SIZE_BYTES } from '../../common/utils/storage';
+import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
@@ -38,6 +39,7 @@ export class BooksService {
     private readonly booksRepo: Repository<Book>,
     private readonly categoriesService: CategoriesService,
     private readonly config: ConfigService,
+    private readonly aiService: AiService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads');
   }
@@ -83,7 +85,11 @@ export class BooksService {
       coverUrl: this.resolveCoverUrl(files, dto),
     });
 
-    return this.booksRepo.save(book);
+    const saved = await this.booksRepo.save(book);
+    // never awaited — indexing shouldn't hold up the response for
+    // whoever's adding the book
+    this.aiService.indexBookInBackground(saved);
+    return saved;
   }
 
   async update(
@@ -118,6 +124,11 @@ export class BooksService {
       await this.deleteLocalAsset(oldCoverUrl);
     }
 
+    // only a changed PDF needs re-embedding; a title-only edit just
+    // relabels the existing chunks (see AiService.renameBookInIndex)
+    if (resolvedFile) this.aiService.indexBookInBackground(saved);
+    else if (dto.title) this.aiService.renameBookInIndex(saved.id, saved.title);
+
     return saved;
   }
 
@@ -136,6 +147,7 @@ export class BooksService {
     await this.booksRepo.remove(book);
     await this.deleteLocalAsset(book.fileUrl);
     await this.deleteLocalAsset(book.coverUrl);
+    this.aiService.removeBookIndexInBackground(id);
   }
 
   private resolveCoverUrl(

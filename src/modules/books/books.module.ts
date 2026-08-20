@@ -8,6 +8,7 @@ import {
   MAX_PDF_SIZE_BYTES,
 } from '../../common/utils/storage';
 import { Book } from '../../database/entities/book.entity';
+import { AiModule } from '../ai/ai.module';
 import { CategoriesModule } from '../categories/categories.module';
 import { BookLookupService } from './book-lookup.service';
 import { BooksController } from './books.controller';
@@ -17,6 +18,7 @@ import { BooksService } from './books.service';
   imports: [
     TypeOrmModule.forFeature([Book]),
     CategoriesModule,
+    AiModule,
     MulterModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

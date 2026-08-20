@@ -82,6 +82,17 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   DISCORD_WEBHOOK_URL?: string;
+
+  // Optional — powers the /ai/ask library chatbot (RAG over the PDFs
+  // already in the library). Leave unset and AiService just answers
+  // "chatbot chưa được bật" instead of indexing/calling out to Gemini.
+  @IsOptional()
+  @IsString()
+  GEMINI_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  AI_SYSTEM_PROMPT?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

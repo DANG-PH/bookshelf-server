@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { AuthorLock } from '../database/entities/author-lock.entity';
 import { Book } from '../database/entities/book.entity';
 import { Category } from '../database/entities/category.entity';
 import { DiaryEntry } from '../database/entities/diary-entry.entity';
@@ -15,7 +16,7 @@ export function buildTypeOrmConfig(
     username: config.get<string>('DB_USERNAME'),
     password: config.get<string>('DB_PASSWORD'),
     database: config.get<string>('DB_NAME'),
-    entities: [Category, Book, SiteSetting, DiaryEntry, Memory],
+    entities: [Category, Book, SiteSetting, DiaryEntry, Memory, AuthorLock],
     // Fine for a small personal project seeded/managed by one person.
     // Switch to migrations if this ever needs to run against data you
     // can't afford to lose on a schema change.

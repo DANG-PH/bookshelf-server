@@ -52,6 +52,9 @@ lerna-debug.log*
 !/uploads/books/.gitkeep
 !/uploads/covers/.gitkeep
 
+# cached RAG embeddings for the library chatbot — regenerated automatically
+/uploads/rag-index.json
+
 # Runtime data
 pids
 *.pid
