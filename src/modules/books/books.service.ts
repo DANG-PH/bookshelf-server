@@ -142,6 +142,13 @@ export class BooksService {
     return this.booksRepo.save(book);
   }
 
+  // fire-and-forget from the frontend on every card open — an atomic SQL
+  // increment instead of read-modify-write so rapid/concurrent clicks
+  // can't race and lose a count; silently a no-op if the id is stale
+  async incrementView(id: string): Promise<void> {
+    await this.booksRepo.increment({ id }, 'viewCount', 1);
+  }
+
   async remove(id: string): Promise<void> {
     const book = await this.findOne(id);
     await this.booksRepo.remove(book);

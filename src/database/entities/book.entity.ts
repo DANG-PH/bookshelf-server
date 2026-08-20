@@ -67,6 +67,11 @@ export class Book {
   @Column({ default: false })
   isFavorite: boolean;
 
+  // bumped by POST /books/:id/view whenever someone opens the file —
+  // purely a lightweight "đã xem N lần" badge, not an analytics system
+  @Column({ type: 'int', default: 0 })
+  viewCount: number;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

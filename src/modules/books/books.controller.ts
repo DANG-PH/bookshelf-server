@@ -71,6 +71,12 @@ export class BooksController {
     return this.booksService.updateStatus(id, dto);
   }
 
+  @Post(':id/view')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  incrementView(@Param('id', ParseUUIDPipe) id: string) {
+    return this.booksService.incrementView(id);
+  }
+
   @Post()
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileFieldsInterceptor(UPLOAD_FIELDS))

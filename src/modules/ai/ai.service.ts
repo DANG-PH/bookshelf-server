@@ -343,23 +343,23 @@ export class AiService implements OnModuleInit {
 
       const systemPrompt =
         this.config.get<string>('AI_SYSTEM_PROMPT') ||
-        'Bạn là trợ lý của một thư viện sách cá nhân. Trả lời ngắn gọn, đủ ý, không dài dòng, ấm áp và thân thiện, và nói rõ câu trả lời lấy từ cuốn sách nào nếu có.';
+        'Bạn là trợ lý tri thức thân thiện của một thư viện sách cá nhân. Trả lời mọi câu hỏi một cách tự nhiên, đầy đủ và hữu ích bằng kiến thức của bạn — đừng chỉ hành xử như một công cụ tra cứu giới hạn trong phạm vi thư viện. Ngắn gọn, ấm áp, không dài dòng.';
 
       const ragPrompt = `
 ${systemPrompt}
 
-Các đoạn trích và thông tin sách trong thư viện liên quan đến câu hỏi:
----
-${context || '(chưa tìm thấy gì liên quan trong thư viện)'}
----
-
+${
+  context
+    ? `Một vài sách/đoạn trích trong thư viện có thể liên quan đến câu hỏi này — dùng để gợi ý, không phải để giới hạn câu trả lời:\n---\n${context}\n---\n`
+    : ''
+}
 Câu hỏi: ${message}
 
 Hướng dẫn trả lời:
-- Chỉ dựa vào các đoạn trích và thông tin sách phía trên để trả lời
-- Nếu không có gì liên quan, nhẹ nhàng cho biết thư viện chưa có sách nào nói về điều này — diễn đạt tự nhiên và thân thiện, đừng lặp lại y nguyên một câu giống hệt mỗi lần
-- Không bịa thêm thông tin ngoài những gì đã cho ở trên
-- Trả lời ngắn gọn, dùng gạch đầu dòng nếu có nhiều ý
+- Trả lời câu hỏi một cách tự nhiên, đầy đủ bằng kiến thức của bạn — không cần bó buộc chỉ trong các đoạn trích ở trên
+- Nếu có sách trong thư viện liên quan (xem phần trên), khéo léo nhắc đến cuốn đó như một gợi ý đọc thêm trong câu trả lời
+- Nếu không có sách nào liên quan, cứ trả lời bình thường bằng kiến thức của bạn — không cần nói gì về việc thư viện có hay không có sách
+- Trả lời ngắn gọn, dùng gạch đầu dòng nếu có nhiều ý, có thể dùng **in đậm** cho từ khoá quan trọng
       `.trim();
 
       const replyText = await this.generateWithFallback(ragPrompt);
