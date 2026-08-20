@@ -68,20 +68,26 @@ export class AiService implements OnModuleInit {
 
   // Chat model, tried in order — falls through on quota/overload errors
   // instead of failing the whole request.
+  // ordered by capability, not stability — this app cares more about
+  // grounded, non-hallucinated answers (it was making up "500 books"
+  // for a 14-book library) than shaving off marginal 503 risk, so the
+  // strongest models go first and the older/lighter ones are purely a
+  // last-resort fallback for when those are overloaded
   private readonly CHAT_MODELS = [
-    // Gemini 2.0 — stable, rarely 503s, tried first
+    // Gemini 2.5 — best instruction-following/grounding trade-off available stably
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+
+    // Gemini 3.x preview — newest, possibly even better, but "preview" so kept below 2.5
+    'gemini-3-flash-preview',
+    'gemini-3.1-flash-lite-preview',
+
+    // Gemini 2.0 — weaker at following grounding instructions, but rarely
+    // overloaded, so this is where the chain lands if everything above fails
     'gemini-2.0-flash',
     'gemini-2.0-flash-001', // pinned version, steadier than the alias
     'gemini-2.0-flash-lite',
     'gemini-2.0-flash-lite-001',
-
-    // Gemini 2.5 — stronger but overloaded more often
-    'gemini-2.5-flash-lite', // lite first, less prone to overload
-    'gemini-2.5-flash',
-
-    // Gemini 3.x preview — last resort if everything above fails
-    'gemini-3-flash-preview',
-    'gemini-3.1-flash-lite-preview',
   ];
 
   // embedding doesn't burn quota the way generation does — one model, no fallback needed
