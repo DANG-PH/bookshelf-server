@@ -358,6 +358,7 @@ Câu hỏi: ${message}
 Hướng dẫn trả lời:
 - Trả lời câu hỏi một cách tự nhiên, đầy đủ bằng kiến thức của bạn — không cần bó buộc chỉ trong các đoạn trích ở trên
 - Nếu có sách trong thư viện liên quan (xem phần trên), khéo léo nhắc đến cuốn đó như một gợi ý đọc thêm trong câu trả lời
+- QUAN TRỌNG: chỉ được nói một cuốn sách "có trong thư viện" nếu nó thực sự xuất hiện trong phần thông tin sách ở trên. Nếu nhắc đến bất kỳ sách/tác giả nào khác từ kiến thức chung của bạn, phải nói rõ đó KHÔNG có trong thư viện này (vd: "cuốn này thư viện chưa có nhé") — đừng bao giờ để người đọc hiểu nhầm là một cuốn sách đang có sẵn để đọc ngay trong khi thực ra không phải
 - Nếu không có sách nào liên quan, cứ trả lời bình thường bằng kiến thức của bạn — không cần nói gì về việc thư viện có hay không có sách
 - Trả lời ngắn gọn, dùng gạch đầu dòng nếu có nhiều ý, có thể dùng **in đậm** cho từ khoá quan trọng
       `.trim();
