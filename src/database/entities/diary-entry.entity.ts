@@ -36,6 +36,14 @@ export class DiaryEntry {
   @Column({ type: 'simple-array', nullable: true })
   likedBy: DiaryAuthor[];
 
+  // true = only visible to whoever wrote it (the "Nhật ký riêng" tab) —
+  // structurally separate from the shared "Nhật ký" feed, not just
+  // hidden behind a UI filter: findAll() always excludes these, and the
+  // only way to list them back is findAllPrivate(author), which requires
+  // an author and only ever returns that author's own entries
+  @Column({ default: false })
+  isPrivate: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

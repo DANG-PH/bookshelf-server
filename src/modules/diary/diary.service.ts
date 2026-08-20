@@ -7,6 +7,7 @@ import {
 } from '../../database/entities/diary-entry.entity';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
 import { QueryDiaryDto } from './dto/query-diary.dto';
+import { QueryPrivateDiaryDto } from './dto/query-private-diary.dto';
 import { UpdateDiaryEntryDto } from './dto/update-diary-entry.dto';
 
 export interface PaginatedDiaryEntries {
@@ -29,6 +30,9 @@ export class DiaryService {
 
     const qb = this.diaryRepo
       .createQueryBuilder('entry')
+      // the shared feed never includes private entries, full stop —
+      // there's no query param that can override this
+      .where('entry.isPrivate = false')
       .orderBy('entry.createdAt', 'DESC')
       .skip(offset)
       .take(limit);
@@ -58,6 +62,38 @@ export class DiaryService {
 
   create(dto: CreateDiaryEntryDto): Promise<DiaryEntry> {
     const entry = this.diaryRepo.create(dto);
+    return this.diaryRepo.save(entry);
+  }
+
+  // "Nhật ký riêng" — each author's own space, never surfaced to the
+  // other one. isPrivate is set here, not read from the client, so a
+  // private entry can never be created any way other than through this
+  async findAllPrivate(
+    query: QueryPrivateDiaryDto,
+  ): Promise<PaginatedDiaryEntries> {
+    const limit = query.limit ?? 30;
+    const offset = query.offset ?? 0;
+
+    const qb = this.diaryRepo
+      .createQueryBuilder('entry')
+      .where('entry.isPrivate = true')
+      .andWhere('entry.author = :author', { author: query.author })
+      .orderBy('entry.createdAt', 'DESC')
+      .skip(offset)
+      .take(limit);
+
+    if (query.q) {
+      qb.andWhere('(entry.title ILIKE :q OR entry.content ILIKE :q)', {
+        q: `%${query.q}%`,
+      });
+    }
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, limit, offset };
+  }
+
+  createPrivate(dto: CreateDiaryEntryDto): Promise<DiaryEntry> {
+    const entry = this.diaryRepo.create({ ...dto, isPrivate: true });
     return this.diaryRepo.save(entry);
   }
 

@@ -15,6 +15,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { DiaryService } from './diary.service';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
 import { QueryDiaryDto } from './dto/query-diary.dto';
+import { QueryPrivateDiaryDto } from './dto/query-private-diary.dto';
 import { ToggleLikeDto } from './dto/toggle-like.dto';
 import { UpdateDiaryEntryDto } from './dto/update-diary-entry.dto';
 
@@ -32,6 +33,18 @@ export class DiaryController {
   @Post()
   create(@Body() dto: CreateDiaryEntryDto) {
     return this.diaryService.create(dto);
+  }
+
+  // "Nhật ký riêng" — must come before the generic ':id' routes below so
+  // Nest doesn't try to parse "private" as a UUID
+  @Get('private')
+  findAllPrivate(@Query() query: QueryPrivateDiaryDto) {
+    return this.diaryService.findAllPrivate(query);
+  }
+
+  @Post('private')
+  createPrivate(@Body() dto: CreateDiaryEntryDto) {
+    return this.diaryService.createPrivate(dto);
   }
 
   @Patch(':id/like')

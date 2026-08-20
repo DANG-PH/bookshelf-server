@@ -312,54 +312,62 @@ export class AiService implements OnModuleInit {
         return { message: cached.message };
       }
 
-      let queryEmbedding: number[];
+      // runs no matter what happens to the AI calls below — it's a plain
+      // DB query, not an API call, so it still finds "Ove" by title even
+      // when the book hasn't finished vector-indexing yet, or the AI is
+      // rate-limited and query embedding fails entirely
+      const metadataMatches = await this.searchBooksByKeyword(message);
+
+      let relevant: EmbeddedChunk[] = [];
       try {
-        queryEmbedding = await this.embedText(message);
+        const queryEmbedding = await this.embedText(message);
+        relevant = this.vectorStore.search(queryEmbedding, 4);
       } catch (err) {
         this.lastError = `embed câu hỏi: ${(err as Error).message}`;
-        this.logger.error(
-          `[AI] embed câu hỏi thất bại: ${(err as Error).message}`,
+        this.logger.warn(
+          `[AI] embed câu hỏi thất bại, dùng thông tin sách trong DB thay thế: ${(err as Error).message}`,
         );
-        if (this.isQuotaExceededError(err)) {
-          return {
-            message:
-              'Thư viện đã dùng hết lượt hỏi AI miễn phí hôm nay rồi, mai quay lại nhé.',
-          };
-        }
-        return {
-          message: 'Không xử lý được câu hỏi lúc này, thử lại sau nhé.',
-        };
+        // no chunk context this time, but keep going — generateWithFallback
+        // can still answer from metadataMatches below
       }
 
-      const relevant = this.vectorStore.search(queryEmbedding, 4);
-      const context = relevant
-        .map((c) => `[Sách: ${c.bookTitle}]\n${c.text}`)
+      const chunkContext = relevant
+        .map((c) => `[Trích đoạn - "${c.bookTitle}"]\n${c.text}`)
+        .join('\n\n---\n\n');
+      const metadataContext = metadataMatches
+        .map((b) => this.bookMetadataBlock(b))
+        .join('\n\n---\n\n');
+      const context = [chunkContext, metadataContext]
+        .filter(Boolean)
         .join('\n\n---\n\n');
 
       const systemPrompt =
         this.config.get<string>('AI_SYSTEM_PROMPT') ||
-        'Bạn là trợ lý của một thư viện sách cá nhân. Trả lời ngắn gọn, đủ ý, không dài dòng, và nói rõ câu trả lời lấy từ cuốn sách nào nếu có.';
+        'Bạn là trợ lý của một thư viện sách cá nhân. Trả lời ngắn gọn, đủ ý, không dài dòng, ấm áp và thân thiện, và nói rõ câu trả lời lấy từ cuốn sách nào nếu có.';
 
       const ragPrompt = `
 ${systemPrompt}
 
-Các đoạn trích từ sách trong thư viện liên quan đến câu hỏi:
+Các đoạn trích và thông tin sách trong thư viện liên quan đến câu hỏi:
 ---
-${context || '(chưa có đoạn nào liên quan trong thư viện)'}
+${context || '(chưa tìm thấy gì liên quan trong thư viện)'}
 ---
 
 Câu hỏi: ${message}
 
 Hướng dẫn trả lời:
-- Chỉ dựa vào các đoạn trích phía trên để trả lời
-- Nếu không có đoạn nào liên quan, nói rõ: "Thư viện chưa có sách nào nói về vấn đề này"
-- Không bịa thêm thông tin ngoài các đoạn trích
+- Chỉ dựa vào các đoạn trích và thông tin sách phía trên để trả lời
+- Nếu không có gì liên quan, nhẹ nhàng cho biết thư viện chưa có sách nào nói về điều này — diễn đạt tự nhiên và thân thiện, đừng lặp lại y nguyên một câu giống hệt mỗi lần
+- Không bịa thêm thông tin ngoài những gì đã cho ở trên
 - Trả lời ngắn gọn, dùng gạch đầu dòng nếu có nhiều ý
       `.trim();
 
       const replyText = await this.generateWithFallback(ragPrompt);
       if (!replyText) {
-        return { message: 'AI đang quá tải, thử lại sau khoảng 1 phút nhé.' };
+        // the model itself is unreachable right now (overloaded, or the
+        // generation quota's blown too) — answer directly from whatever
+        // book metadata matched instead of just apologizing
+        return { message: this.metadataOnlyReply(metadataMatches) };
       }
 
       this.responseCache.set(cacheKey, {
@@ -372,6 +380,106 @@ Hướng dẫn trả lời:
       this.logger.error(`[AI] chatCompletion lỗi: ${(err as Error).message}`);
       return { message: 'Có lỗi xảy ra, thử lại nhé.' };
     }
+  }
+
+  // Vietnamese/English filler words stripped before matching the question's
+  // remaining words against book titles/authors — short and deliberately
+  // conservative, this only needs to isolate the word that's actually the
+  // subject of the question (e.g. "ove" out of "người đàn ông mang tên ove ấy?")
+  private readonly STOPWORDS = new Set([
+    'là',
+    'gì',
+    'ai',
+    'của',
+    'và',
+    'hay',
+    'không',
+    'có',
+    'nào',
+    'này',
+    'đó',
+    'ấy',
+    'người',
+    'cuốn',
+    'sách',
+    'trong',
+    'thư',
+    'viện',
+    'cho',
+    'tôi',
+    'em',
+    'anh',
+    'mình',
+    'nói',
+    'về',
+    'thế',
+    'nhé',
+    'với',
+    'the',
+    'a',
+    'an',
+    'is',
+    'are',
+    'what',
+    'who',
+    'how',
+  ]);
+
+  // plain title/author keyword search — no API call, so it works even when
+  // the AI is unreachable, and finds a book by name before it's finished
+  // (or ever gets to finish) vector-indexing
+  private async searchBooksByKeyword(
+    message: string,
+    limit = 3,
+  ): Promise<Book[]> {
+    const words = message
+      .toLowerCase()
+      .replace(/[?.,!"'();:]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 3 && !this.STOPWORDS.has(w));
+    if (!words.length) return [];
+
+    const qb = this.booksRepo.createQueryBuilder('book');
+    words.forEach((w, i) => {
+      qb.orWhere(`book.title ILIKE :w${i} OR book.author ILIKE :w${i}`, {
+        [`w${i}`]: `%${w}%`,
+      });
+    });
+    return qb.take(limit).getMany();
+  }
+
+  private bookMetadataBlock(b: Book): string {
+    const lines = [
+      `[Thông tin sách - "${b.title}"${b.author ? ` của ${b.author}` : ''}]`,
+    ];
+    lines.push(b.blurb || b.note || '(chưa có mô tả)');
+    return lines.join('\n');
+  }
+
+  // used only when the model itself couldn't be reached at all — a plain
+  // template answer from DB metadata beats a bare apology, but it's not a
+  // real generated response so it's kept honest about that
+  private metadataOnlyReply(matches: Book[]): string {
+    if (!matches.length) return this.pickRandom(this.OVERLOADED_REPLIES);
+    const lines = [
+      'AI đang hơi quá tải nên chưa soạn được câu trả lời đầy đủ, nhưng thư viện có mấy cuốn liên quan nè:',
+      '',
+      ...matches.map(
+        (b) =>
+          `- "${b.title}"${b.author ? ` của ${b.author}` : ''}${b.blurb ? `: ${b.blurb}` : ''}`,
+      ),
+    ];
+    return lines.join('\n');
+  }
+
+  private readonly OVERLOADED_REPLIES = [
+    'AI hơi quá tải rồi, thử hỏi lại sau ít phút nhé.',
+    'Đang đông người hỏi quá, đợi chút rồi hỏi lại giúp mình nhé.',
+    'AI đang nghỉ mệt xíu, lát quay lại hỏi tiếp nhé.',
+  ];
+
+  private pickRandom(options: string[]): string {
+    return options[Math.floor(Math.random() * options.length)];
   }
 
   private async embedText(text: string): Promise<number[]> {
