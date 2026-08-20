@@ -18,11 +18,22 @@ const EMBED_DELAY_MS = 200;
 export interface AiStatus {
   configured: boolean;
   indexedChunks: number;
+  // count of books that finished indexing completely — a book that hit
+  // an error partway through does NOT count here, even though some of
+  // its chunks already made it into indexedChunks, because it still
+  // needs a retry to fill the gaps
   indexedBooks: number;
   totalBooks: number;
   lastSyncAt: string | null;
   lastError: string | null;
 }
+
+interface PersistedIndex {
+  chunks: EmbeddedChunk[];
+  completedBookIds: string[];
+}
+
+type IndexResult = 'complete' | 'partial' | 'quota-exceeded';
 
 // RAG chatbot over the PDFs already sitting in the library — each book's
 // text gets chunked + embedded once and cached to disk; asking a
@@ -49,6 +60,11 @@ export class AiService implements OnModuleInit {
   // without needing to go dig through `pm2 logs`
   private lastSyncAt: Date | null = null;
   private lastError: string | null = null;
+  // books that finished indexing with every chunk embedded — separate
+  // from vectorStore's contents because a book that got cut off partway
+  // (e.g. daily quota ran out) still has *some* chunks in the vector
+  // store, but needs to be retried, not skipped, on the next sync
+  private completedBookIds = new Set<string>();
 
   // Chat model, tried in order — falls through on quota/overload errors
   // instead of failing the whole request.
@@ -70,6 +86,12 @@ export class AiService implements OnModuleInit {
 
   // embedding doesn't burn quota the way generation does — one model, no fallback needed
   private readonly EMBED_MODEL = 'gemini-embedding-001';
+  // Gemini's embedContent quota is metered per *request*, not per text —
+  // batching chunks into one call instead of one request per chunk cuts
+  // request count by ~20x, which is the difference between finishing a
+  // 14-book library comfortably inside the free tier's 1000/day cap and
+  // blowing through it by the second book.
+  private readonly EMBED_BATCH_SIZE = 20;
 
   constructor(
     private readonly config: ConfigService,
@@ -102,7 +124,7 @@ export class AiService implements OnModuleInit {
     return {
       configured: Boolean(this.genAI),
       indexedChunks: this.vectorStore.size,
-      indexedBooks: this.vectorStore.indexedBookIds.size,
+      indexedBooks: this.completedBookIds.size,
       totalBooks,
       lastSyncAt: this.lastSyncAt ? this.lastSyncAt.toISOString() : null,
       lastError: this.lastError,
@@ -111,30 +133,43 @@ export class AiService implements OnModuleInit {
 
   // reconciles the persisted index against whatever books actually exist
   // right now — drops chunks for books that got deleted while the app
-  // wasn't running, and indexes any book that's missing from it
+  // wasn't running, and indexes any book that isn't fully indexed yet
+  // (including one left partway-done by a previous quota-exceeded run)
   private async syncIndexWithLibrary(): Promise<void> {
     await this.loadPersistedIndex();
 
     const books = await this.booksRepo.find();
     const bookIds = new Set(books.map((b) => b.id));
-    const indexedIds = this.vectorStore.indexedBookIds;
 
-    const staleIds = [...indexedIds].filter((id) => !bookIds.has(id));
+    const staleIds = [...this.vectorStore.indexedBookIds].filter(
+      (id) => !bookIds.has(id),
+    );
     staleIds.forEach((id) => this.vectorStore.removeByBookId(id));
+    [...this.completedBookIds]
+      .filter((id) => !bookIds.has(id))
+      .forEach((id) => this.completedBookIds.delete(id));
     if (staleIds.length) {
       this.logger.log(`[AI] Bỏ ${staleIds.length} sách đã xoá khỏi index`);
     }
 
-    const missing = books.filter((b) => !indexedIds.has(b.id));
+    const missing = books.filter((b) => !this.completedBookIds.has(b.id));
     if (missing.length) {
-      this.logger.log(`[AI] ${missing.length} sách chưa đánh index — bắt đầu…`);
+      this.logger.log(
+        `[AI] ${missing.length} sách chưa đánh index xong — bắt đầu…`,
+      );
       for (const book of missing) {
-        await this.indexBook(book).catch((err: Error) => {
+        const result = await this.indexBook(book).catch((err: Error) => {
           this.lastError = `"${book.title}": ${err.message}`;
           this.logger.warn(
             `[AI] Không đánh index được "${book.title}": ${err.message}`,
           );
+          return 'partial' as const;
         });
+        if (result === 'quota-exceeded') {
+          // every remaining book would just hit the same wall — stop
+          // here instead of hammering the API with guaranteed 429s
+          break;
+        }
       }
     }
 
@@ -145,9 +180,12 @@ export class AiService implements OnModuleInit {
   private async loadPersistedIndex(): Promise<void> {
     try {
       const raw = await fs.readFile(this.indexPath, 'utf-8');
-      const saved = JSON.parse(raw) as EmbeddedChunk[];
-      this.vectorStore.load(saved);
-      this.logger.log(`[AI] Nạp ${this.vectorStore.size} đoạn từ index có sẵn`);
+      const saved = JSON.parse(raw) as PersistedIndex;
+      this.vectorStore.load(saved.chunks ?? []);
+      this.completedBookIds = new Set(saved.completedBookIds ?? []);
+      this.logger.log(
+        `[AI] Nạp ${this.vectorStore.size} đoạn từ index có sẵn (${this.completedBookIds.size} sách đã đánh index xong)`,
+      );
     } catch {
       // no index on disk yet — fine, syncIndexWithLibrary will build one
     }
@@ -155,15 +193,21 @@ export class AiService implements OnModuleInit {
 
   private async persistIndex(): Promise<void> {
     await fs.mkdir(this.uploadDir, { recursive: true }).catch(() => undefined);
-    await fs.writeFile(this.indexPath, JSON.stringify(this.vectorStore.dump()));
+    const payload: PersistedIndex = {
+      chunks: this.vectorStore.dump(),
+      completedBookIds: [...this.completedBookIds],
+    };
+    await fs.writeFile(this.indexPath, JSON.stringify(payload));
   }
 
   // reads the book's PDF off disk, chunks + embeds it, and replaces
   // whatever was previously indexed for it (safe to call again after
-  // the file changes on an edit)
-  async indexBook(book: Book): Promise<void> {
-    if (!this.genAI) return;
+  // the file changes on an edit, or to retry a book left incomplete by
+  // a previous quota-exceeded run)
+  async indexBook(book: Book): Promise<IndexResult> {
+    if (!this.genAI) return 'partial';
     this.vectorStore.removeByBookId(book.id);
+    this.completedBookIds.delete(book.id);
 
     const filePath = join(this.uploadDir, book.fileUrl);
     let chunks: string[];
@@ -173,39 +217,54 @@ export class AiService implements OnModuleInit {
       const msg = `Không đọc được PDF của "${book.title}": ${(err as Error).message}`;
       this.lastError = msg;
       this.logger.warn(`[AI] ${msg}`);
-      return;
+      return 'partial';
     }
 
     const embedded: EmbeddedChunk[] = [];
-    let lastChunkError: string | null = null;
-    for (const text of chunks) {
+    let quotaExceeded = false;
+
+    for (let i = 0; i < chunks.length; i += this.EMBED_BATCH_SIZE) {
+      const batch = chunks.slice(i, i + this.EMBED_BATCH_SIZE);
       try {
-        const embedding = await this.embedText(text);
-        embedded.push({
-          bookId: book.id,
-          bookTitle: book.title,
-          text,
-          embedding,
-        });
+        const vectors = await this.embedBatch(batch);
+        batch.forEach((text, idx) =>
+          embedded.push({
+            bookId: book.id,
+            bookTitle: book.title,
+            text,
+            embedding: vectors[idx],
+          }),
+        );
       } catch (err) {
-        lastChunkError = (err as Error).message;
+        if (this.isQuotaExceededError(err)) {
+          this.lastError =
+            'Hết quota embedding Gemini miễn phí trong ngày — sẽ tự đánh index tiếp ở lần chạy sau.';
+          this.logger.warn(
+            `[AI] ${this.lastError} (dừng tại "${book.title}", đã xong ${embedded.length}/${chunks.length} đoạn)`,
+          );
+          quotaExceeded = true;
+          break;
+        }
+        const message = (err as Error).message;
+        this.lastError = `"${book.title}": ${message}`;
         this.logger.warn(
-          `[AI] Bỏ qua 1 đoạn của "${book.title}": ${lastChunkError}`,
+          `[AI] Bỏ qua 1 nhóm đoạn của "${book.title}": ${message}`,
         );
       }
       await new Promise((r) => setTimeout(r, EMBED_DELAY_MS));
     }
 
-    if (embedded.length === 0 && chunks.length > 0) {
-      // every single chunk failed to embed — almost always an API/auth
-      // problem, not a fluke, so this is worth remembering for /ai/status
-      this.lastError = `"${book.title}": tất cả ${chunks.length} đoạn đều embed lỗi (${lastChunkError ?? 'không rõ lý do'})`;
-    }
-
     this.vectorStore.add(embedded);
+
+    const complete = !quotaExceeded && embedded.length === chunks.length;
+    if (complete) this.completedBookIds.add(book.id);
+
     this.logger.log(
-      `[AI] Đã đánh index "${book.title}" (${embedded.length}/${chunks.length} đoạn)`,
+      `[AI] ${complete ? 'Đã đánh index' : 'Đánh index dở, sẽ tiếp tục sau'} "${book.title}" (${embedded.length}/${chunks.length} đoạn)`,
     );
+
+    if (complete) return 'complete';
+    return quotaExceeded ? 'quota-exceeded' : 'partial';
   }
 
   // called by BooksService right after a book is created or its PDF
@@ -226,6 +285,7 @@ export class AiService implements OnModuleInit {
   removeBookIndexInBackground(bookId: string): void {
     if (!this.genAI) return;
     this.vectorStore.removeByBookId(bookId);
+    this.completedBookIds.delete(bookId);
     this.persistIndex().catch(() => undefined);
   }
 
@@ -260,6 +320,12 @@ export class AiService implements OnModuleInit {
         this.logger.error(
           `[AI] embed câu hỏi thất bại: ${(err as Error).message}`,
         );
+        if (this.isQuotaExceededError(err)) {
+          return {
+            message:
+              'Thư viện đã dùng hết lượt hỏi AI miễn phí hôm nay rồi, mai quay lại nhé.',
+          };
+        }
         return {
           message: 'Không xử lý được câu hỏi lúc này, thử lại sau nhé.',
         };
@@ -309,15 +375,35 @@ Hướng dẫn trả lời:
   }
 
   private async embedText(text: string): Promise<number[]> {
+    const [values] = await this.embedBatch([text]);
+    return values;
+  }
+
+  // one embedContent call for up to EMBED_BATCH_SIZE texts at once —
+  // Gemini's quota is metered per request, so this is what keeps a
+  // whole-library index run from burning through the daily cap
+  private async embedBatch(texts: string[]): Promise<number[][]> {
     const result = await this.genAI!.models.embedContent({
       model: this.EMBED_MODEL,
-      contents: text,
+      contents: texts,
     });
-    const values = result.embeddings?.[0]?.values;
-    if (!values || values.length === 0) {
-      throw new Error('Gemini trả về embedding rỗng');
+    const embeddings = result.embeddings;
+    if (!embeddings || embeddings.length !== texts.length) {
+      throw new Error(
+        `Gemini trả về ${embeddings?.length ?? 0} embedding cho ${texts.length} đoạn`,
+      );
     }
-    return values;
+    return embeddings.map((e) => {
+      if (!e.values || e.values.length === 0) {
+        throw new Error('Gemini trả về embedding rỗng');
+      }
+      return e.values;
+    });
+  }
+
+  private isQuotaExceededError(err: unknown): boolean {
+    const msg = err instanceof Error ? err.message : String(err);
+    return msg.includes('RESOURCE_EXHAUSTED') || msg.includes('"code":429');
   }
 
   private async generateWithFallback(prompt: string): Promise<string | null> {
