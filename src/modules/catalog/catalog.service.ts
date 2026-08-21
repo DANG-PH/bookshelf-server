@@ -69,6 +69,9 @@ export class CatalogService {
             cover: resolveAsset(b.coverUrl),
             readStatus: b.readStatus,
             isFavorite: b.isFavorite,
+            rating: b.rating,
+            review: b.review,
+            viewCount: b.viewCount,
             // "Mới" is computed on the frontend from this instead of a
             // stored flag — no cron/queue needed to expire it after a day
             createdAt: b.createdAt,
