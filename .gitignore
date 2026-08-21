@@ -46,11 +46,13 @@ lerna-debug.log*
 .temp
 .tmp
 
-# uploaded book files/covers (keep folder structure via .gitkeep)
+# uploaded book files/covers/diary photos (keep folder structure via .gitkeep)
 /uploads/books/*
 /uploads/covers/*
+/uploads/diary/*
 !/uploads/books/.gitkeep
 !/uploads/covers/.gitkeep
+!/uploads/diary/.gitkeep
 
 # cached RAG embeddings for the library chatbot — regenerated automatically
 /uploads/rag-index.json

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -26,7 +27,17 @@ export class DiaryService {
     private readonly diaryRepo: Repository<DiaryEntry>,
     private readonly notificationsService: NotificationsService,
     private readonly settingsService: SettingsService,
+    private readonly config: ConfigService,
   ) {}
+
+  // photoUrl is stored (and validated with @IsUrl) as a full absolute
+  // URL, same shape a pasted link would have been — so nothing else
+  // downstream (DTO validation, rendering) needs to know it came from an
+  // upload instead
+  resolvePhotoUrl(filename: string): string {
+    const publicUrl = this.config.get<string>('PUBLIC_URL', '');
+    return `${publicUrl}/api/files/diary/${filename}`;
+  }
 
   async findAll(query: QueryDiaryDto): Promise<PaginatedDiaryEntries> {
     const limit = query.limit ?? 30;

@@ -13,7 +13,7 @@ import { existsSync } from 'fs';
 import { basename, join, resolve } from 'path';
 import { Public } from '../../common/decorators/public.decorator';
 
-const ALLOWED_TYPES = ['books', 'covers'] as const;
+const ALLOWED_TYPES = ['books', 'covers', 'diary'] as const;
 
 @ApiTags('files')
 @Controller('files')

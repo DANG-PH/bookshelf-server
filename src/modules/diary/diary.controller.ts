@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -10,8 +11,11 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { DiaryService } from './diary.service';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
 import { QueryDiaryDto } from './dto/query-diary.dto';
@@ -33,6 +37,18 @@ export class DiaryController {
   @Post()
   create(@Body() dto: CreateDiaryEntryDto) {
     return this.diaryService.create(dto);
+  }
+
+  // uploads the photo first, separately from creating/updating the entry
+  // itself — the entry endpoints stay plain JSON, this just hands back a
+  // photoUrl to include in that body, same two-step flow admin.html
+  // already uses for book covers
+  @Post('upload-photo')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('photo'))
+  uploadPhoto(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Thiếu file ảnh');
+    return { photoUrl: this.diaryService.resolvePhotoUrl(file.filename) };
   }
 
   // "Nhật ký riêng" — must come before the generic ':id' routes below so

@@ -20,6 +20,17 @@ export function bookAssetsStorage(uploadDir: string) {
   });
 }
 
+// generic single-image storage, for anything that just needs "upload one
+// picture into its own subfolder" without book-specific field routing
+export function imageAssetStorage(uploadDir: string, subfolder: string) {
+  return diskStorage({
+    destination: (_req, _file, cb) => cb(null, `${uploadDir}/${subfolder}`),
+    filename: (_req, file, cb) => {
+      cb(null, `${uuidv4()}${extname(file.originalname).toLowerCase()}`);
+    },
+  });
+}
+
 export function pdfFileFilter(
   _req: unknown,
   file: Express.Multer.File,
