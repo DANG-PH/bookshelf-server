@@ -21,7 +21,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { UpdateBookStatusDto } from './dto/update-book-status.dto';
-import { UpsertBookReviewDto } from './dto/upsert-book-review.dto';
+import { CreateBookReviewDto } from './dto/create-book-review.dto';
 
 export interface UploadedBookFiles {
   file?: Express.Multer.File[];
@@ -81,29 +81,35 @@ export class BooksService {
     return this.booksRepo.save(book);
   }
 
-  // upserts the caller's own rating/review — sending both empty deletes
-  // that person's row entirely rather than leaving an empty husk behind
-  async upsertReview(
+  // always adds a brand new entry — a person can rate/review the same
+  // book as many times as they want (re-reads, updated thoughts, …)
+  // instead of one submission overwriting the last
+  async addReview(
     bookId: string,
-    dto: UpsertBookReviewDto,
-  ): Promise<BookReview | null> {
+    dto: CreateBookReviewDto,
+  ): Promise<BookReview> {
     await this.findOne(bookId); // 404s if the book doesn't exist
 
-    const existing = await this.bookReviewsRepo.findOne({
-      where: { bookId, author: dto.author },
-    });
     const hasContent = dto.rating != null || Boolean(dto.review?.trim());
-
     if (!hasContent) {
-      if (existing) await this.bookReviewsRepo.remove(existing);
-      return null;
+      throw new BadRequestException('Cần có sao hoặc cảm nhận');
     }
 
-    const entity =
-      existing ?? this.bookReviewsRepo.create({ bookId, author: dto.author });
-    entity.rating = dto.rating ?? null;
-    entity.review = dto.review?.trim() || null;
+    const entity = this.bookReviewsRepo.create({
+      bookId,
+      author: dto.author,
+      rating: dto.rating ?? null,
+      review: dto.review?.trim() || null,
+    });
     return this.bookReviewsRepo.save(entity);
+  }
+
+  async deleteReview(bookId: string, reviewId: string): Promise<void> {
+    const review = await this.bookReviewsRepo.findOne({
+      where: { id: reviewId, bookId },
+    });
+    if (!review) throw new NotFoundException('Không tìm thấy đánh giá');
+    await this.bookReviewsRepo.remove(review);
   }
 
   async create(dto: CreateBookDto, files: UploadedBookFiles): Promise<Book> {

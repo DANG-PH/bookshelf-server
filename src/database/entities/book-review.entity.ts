@@ -5,18 +5,16 @@ import {
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
-  Unique,
-  UpdateDateColumn,
 } from 'typeorm';
 import { Book } from './book.entity';
 
 export type BookReviewAuthor = 'me' | 'partner';
 
-// one row per (book, author) — each of the two people gets their own
-// rating + review of a book instead of a single shared value either
-// person could silently overwrite
+// one row per submission, not per (book, author) — either person can
+// write as many ratings/reviews for the same book as they want over time
+// (re-reads, updated thoughts, …) instead of one entry silently
+// overwriting the last
 @Entity('book_reviews')
-@Unique(['bookId', 'author'])
 export class BookReview {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -39,7 +37,4 @@ export class BookReview {
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt: Date;
 }

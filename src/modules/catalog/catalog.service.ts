@@ -69,11 +69,22 @@ export class CatalogService {
             cover: resolveAsset(b.coverUrl),
             readStatus: b.readStatus,
             favoritedBy: b.favoritedBy || [],
-            reviews: (b.reviews || []).map((r) => ({
-              author: r.author,
-              rating: r.rating,
-              review: r.review,
-            })),
+            // newest first — this is a running log of entries, not one
+            // slot per person, so recency is the natural order
+            reviews: (b.reviews || [])
+              .slice()
+              .sort(
+                (a, c) =>
+                  new Date(c.createdAt).getTime() -
+                  new Date(a.createdAt).getTime(),
+              )
+              .map((r) => ({
+                id: r.id,
+                author: r.author,
+                rating: r.rating,
+                review: r.review,
+                createdAt: r.createdAt,
+              })),
             viewCount: b.viewCount,
             // "Mới" is computed on the frontend from this instead of a
             // stored flag — no cron/queue needed to expire it after a day

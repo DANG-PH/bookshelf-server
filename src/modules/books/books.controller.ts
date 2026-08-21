@@ -9,7 +9,6 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Put,
   Query,
   UploadedFiles,
   UseInterceptors,
@@ -23,7 +22,7 @@ import { CreateBookDto } from './dto/create-book.dto';
 import { ToggleBookFavoriteDto } from './dto/toggle-book-favorite.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { UpdateBookStatusDto } from './dto/update-book-status.dto';
-import { UpsertBookReviewDto } from './dto/upsert-book-review.dto';
+import { CreateBookReviewDto } from './dto/create-book-review.dto';
 
 const UPLOAD_FIELDS = [
   { name: 'file', maxCount: 1 },
@@ -88,12 +87,21 @@ export class BooksController {
     return this.booksService.toggleFavorite(id, dto.author);
   }
 
-  @Put(':id/reviews')
-  upsertReview(
+  @Post(':id/reviews')
+  addReview(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpsertBookReviewDto,
+    @Body() dto: CreateBookReviewDto,
   ) {
-    return this.booksService.upsertReview(id, dto);
+    return this.booksService.addReview(id, dto);
+  }
+
+  @Delete(':id/reviews/:reviewId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteReview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+  ) {
+    return this.booksService.deleteReview(id, reviewId);
   }
 
   @Post()
