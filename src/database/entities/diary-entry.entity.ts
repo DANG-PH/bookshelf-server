@@ -30,6 +30,10 @@ export class DiaryEntry {
   @Column({ type: 'varchar', nullable: true })
   mood: string;
 
+  // pasted link only, same as Memory.photoUrl — no upload pipeline needed
+  @Column({ nullable: true })
+  photoUrl: string;
+
   // which of the two people have hearted this entry — tracked per-author
   // (not a single shared flag) so one person's tym can't silently un-heart
   // the other's; the frontend counts array length for the "x tym" badge

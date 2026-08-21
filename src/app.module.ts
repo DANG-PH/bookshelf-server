@@ -17,6 +17,7 @@ import { MemoriesModule } from './modules/memories/memories.module';
 import { AuthorLocksModule } from './modules/author-locks/author-locks.module';
 import { AiModule } from './modules/ai/ai.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SearchModule } from './modules/search/search.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -39,6 +40,7 @@ import { HealthController } from './health.controller';
     AuthorLocksModule,
     AiModule,
     NotificationsModule,
+    SearchModule,
   ],
   controllers: [HealthController],
   providers: [

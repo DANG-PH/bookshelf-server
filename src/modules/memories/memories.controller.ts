@@ -27,6 +27,11 @@ export class MemoriesController {
     return this.memoriesService.findAll();
   }
 
+  @Get('on-this-day')
+  onThisDay() {
+    return this.memoriesService.onThisDay();
+  }
+
   @Post()
   create(@Body() dto: CreateMemoryDto) {
     return this.memoriesService.create(dto);

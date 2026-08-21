@@ -26,6 +26,29 @@ export class MemoriesService {
       .getMany();
   }
 
+  // "1 năm trước hôm nay" — matches on whichever date the memory is
+  // actually sorted/displayed by (memoryDate if set, else createdAt),
+  // same COALESCE as findAll(), for a past year on today's month+day
+  async onThisDay(): Promise<Memory[]> {
+    const now = new Date();
+    return this.memoriesRepo
+      .createQueryBuilder('memory')
+      .where(
+        'EXTRACT(MONTH FROM COALESCE(memory.memoryDate, memory.createdAt)) = :month',
+        { month: now.getMonth() + 1 },
+      )
+      .andWhere(
+        'EXTRACT(DAY FROM COALESCE(memory.memoryDate, memory.createdAt)) = :day',
+        { day: now.getDate() },
+      )
+      .andWhere(
+        'EXTRACT(YEAR FROM COALESCE(memory.memoryDate, memory.createdAt)) < :year',
+        { year: now.getFullYear() },
+      )
+      .orderBy('COALESCE(memory.memoryDate, memory.createdAt)', 'DESC')
+      .getMany();
+  }
+
   create(dto: CreateMemoryDto): Promise<Memory> {
     const { youtubeUrl, ...rest } = dto;
     let youtubeId: string | undefined;

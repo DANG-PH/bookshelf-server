@@ -72,6 +72,16 @@ export class Book {
   @Column({ type: 'int', default: 0 })
   viewCount: number;
 
+  // personal rating (1–5) + written review, set the same way as
+  // isFavorite/readStatus — by whoever's browsing, not just whoever
+  // added the book. Independent of readStatus so a rating never gets
+  // silently wiped by a status change.
+  @Column({ type: 'int', nullable: true })
+  rating: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  review: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

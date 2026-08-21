@@ -338,6 +338,90 @@ export class AiService implements OnModuleInit {
     return { message: replyText, sessionId: session.id };
   }
 
+  // "Gợi ý sách cho tôi" — reuses the same session plumbing as
+  // chatCompletion (so it shows up as a normal exchange in history) but
+  // with a synthetic prompt built from what's actually favorited/finished/
+  // highly-rated instead of a typed question
+  async recommendBooks(
+    sessionId?: string,
+  ): Promise<{ message: string; sessionId: string }> {
+    const session = sessionId
+      ? ((await this.chatSessionsService.findSession(sessionId)) ??
+        (await this.chatSessionsService.createSession()))
+      : await this.chatSessionsService.createSession();
+
+    const userTurnText =
+      'Gợi ý sách cho tôi dựa trên sách tôi đã thích/đọc xong';
+    const replyText = await this.generateRecommendationReply();
+
+    await this.chatSessionsService.appendMessage(
+      session.id,
+      'user',
+      userTurnText,
+    );
+    await this.chatSessionsService.appendMessage(
+      session.id,
+      'model',
+      replyText,
+    );
+    await this.chatSessionsService.touchSession(session.id, userTurnText);
+
+    return { message: replyText, sessionId: session.id };
+  }
+
+  private async generateRecommendationReply(): Promise<string> {
+    if (!this.genAI) {
+      return 'Chatbot chưa được bật — cần cấu hình GEMINI_API_KEY trước đã.';
+    }
+    try {
+      const allBooks = await this.booksRepo.find({
+        relations: { category: true },
+      });
+      const seeds = allBooks.filter(
+        (b) => b.isFavorite || b.readStatus === 'done' || (b.rating ?? 0) >= 4,
+      );
+      if (!seeds.length) {
+        return 'Đánh dấu yêu thích, đọc xong, hoặc chấm sao vài cuốn sách đã nhé — mình sẽ dựa vào đó để gợi ý sách hợp gu bạn hơn.';
+      }
+      const seedIds = new Set(seeds.map((b) => b.id));
+      const candidates = allBooks.filter((b) => !seedIds.has(b.id));
+      if (!candidates.length) {
+        return 'Bạn đọc/thích gần hết sách trong thư viện rồi đó — chưa còn cuốn nào mới để gợi ý thêm cả.';
+      }
+
+      const describeBook = (b: Book): string => {
+        const parts = [`"${b.title}"${b.author ? ` của ${b.author}` : ''}`];
+        if (b.category?.title) parts.push(`chủ đề ${b.category.title}`);
+        if (b.tags?.length) parts.push(`tag: ${b.tags.join(', ')}`);
+        if (b.blurb) parts.push(b.blurb);
+        return `- ${parts.join(' — ')}`;
+      };
+
+      const prompt = `
+Bạn là trợ lý gợi ý sách của một thư viện cá nhân.
+
+Những cuốn sách người dùng đã yêu thích/đọc xong/đánh giá cao (dùng để đoán gu đọc):
+${seeds.map(describeBook).join('\n')}
+
+Những cuốn sách khác đang có trong thư viện, chưa đọc/chưa đánh dấu (chỉ được chọn gợi ý từ đây):
+${candidates.map(describeBook).join('\n')}
+
+Nhiệm vụ: chọn ra tối đa 3 cuốn trong danh sách "chưa đọc" ở trên phù hợp nhất với gu đọc, mỗi cuốn nêu 1 câu lý do ngắn gọn vì sao hợp.
+TUYỆT ĐỐI chỉ được chọn sách có trong danh sách "chưa đọc" ở trên — không được bịa thêm sách nào khác. Nếu không cuốn nào thực sự phù hợp, cứ nói thật là chưa tìm được cuốn nào hợp lắm, đừng ép chọn đại.
+Trả lời ngắn gọn, ấm áp, dùng gạch đầu dòng, có thể dùng **in đậm** cho tên sách.
+      `.trim();
+
+      const reply = await this.generateWithFallback([
+        { role: 'user', parts: [{ text: prompt }] },
+      ]);
+      return reply ?? this.pickRandom(this.OVERLOADED_REPLIES);
+    } catch (err) {
+      this.lastError = (err as Error).message;
+      this.logger.error(`[AI] recommendBooks lỗi: ${(err as Error).message}`);
+      return 'Có lỗi xảy ra, thử lại nhé.';
+    }
+  }
+
   private async generateReply(
     message: string,
     sessionId: string,

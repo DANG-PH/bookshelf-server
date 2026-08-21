@@ -64,6 +64,28 @@ export class DiaryService {
     return { items, total, limit, offset };
   }
 
+  // "1 năm trước hôm nay" — shared entries only (never private, same as
+  // findAll) whose createdAt falls on today's month+day in any past year.
+  // EXTRACT(MONTH/DAY FROM ...) is standard SQL, works on both
+  // postgres and mysql without a dialect-specific query.
+  async onThisDay(): Promise<DiaryEntry[]> {
+    const now = new Date();
+    return this.diaryRepo
+      .createQueryBuilder('entry')
+      .where('entry.isPrivate = false')
+      .andWhere('EXTRACT(MONTH FROM entry.createdAt) = :month', {
+        month: now.getMonth() + 1,
+      })
+      .andWhere('EXTRACT(DAY FROM entry.createdAt) = :day', {
+        day: now.getDate(),
+      })
+      .andWhere('EXTRACT(YEAR FROM entry.createdAt) < :year', {
+        year: now.getFullYear(),
+      })
+      .orderBy('entry.createdAt', 'DESC')
+      .getMany();
+  }
+
   async create(dto: CreateDiaryEntryDto): Promise<DiaryEntry> {
     const entry = this.diaryRepo.create(dto);
     const saved = await this.diaryRepo.save(entry);

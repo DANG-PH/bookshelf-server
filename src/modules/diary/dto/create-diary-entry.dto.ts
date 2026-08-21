@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 
 export const DIARY_AUTHORS = ['me', 'partner'] as const;
 export const DIARY_MOODS = [
@@ -31,4 +31,9 @@ export class CreateDiaryEntryDto {
   @IsOptional()
   @IsIn(DIARY_MOODS)
   mood?: string;
+
+  @ApiPropertyOptional({ description: 'Dán link ảnh, không bắt buộc' })
+  @IsOptional()
+  @IsUrl()
+  photoUrl?: string;
 }

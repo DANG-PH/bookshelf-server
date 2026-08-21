@@ -47,6 +47,13 @@ export class DiaryController {
     return this.diaryService.createPrivate(dto);
   }
 
+  // same reason this has to sit above ':id' — "on-this-day" would
+  // otherwise get parsed as a UUID param
+  @Get('on-this-day')
+  onThisDay() {
+    return this.diaryService.onThisDay();
+  }
+
   @Patch(':id/like')
   toggleLike(
     @Param('id', ParseUUIDPipe) id: string,

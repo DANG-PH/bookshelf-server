@@ -144,6 +144,8 @@ export class BooksService {
     const book = await this.findOne(id);
     if (dto.readStatus !== undefined) book.readStatus = dto.readStatus;
     if (dto.isFavorite !== undefined) book.isFavorite = dto.isFavorite;
+    if (dto.rating !== undefined) book.rating = dto.rating;
+    if (dto.review !== undefined) book.review = dto.review;
     return this.booksRepo.save(book);
   }
 
