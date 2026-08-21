@@ -7,8 +7,13 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { Repository } from 'typeorm';
 import { Book } from '../../database/entities/book.entity';
+import { ChatHistoryTurnDto } from './dto/ask-ai.dto';
 import { chunkPdf } from './rag/pdf-chunker';
 import { EmbeddedChunk, InMemoryVectorStore } from './rag/vector-store';
+
+// minimal local shape for @google/genai's multi-turn `contents` — avoids
+// depending on whichever internal type name the SDK exports for this
+type GeminiContent = { role: 'user' | 'model'; parts: { text: string }[] };
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 // spread out embedding calls so a library with many books doesn't blow
@@ -303,7 +308,10 @@ export class AiService implements OnModuleInit {
     this.persistIndex().catch(() => undefined);
   }
 
-  async chatCompletion(message: string): Promise<{ message: string }> {
+  async chatCompletion(
+    message: string,
+    history: ChatHistoryTurnDto[] = [],
+  ): Promise<{ message: string }> {
     if (!this.genAI) {
       return {
         message:
@@ -312,7 +320,14 @@ export class AiService implements OnModuleInit {
     }
 
     try {
-      const cacheKey = this.hashKey(message);
+      // history is part of the cache key too — the same question can get
+      // a different answer depending on what was asked before it
+      const cacheKey = this.hashKey(
+        JSON.stringify({
+          h: history.map((t) => `${t.role}:${t.text}`),
+          m: message,
+        }),
+      );
       const cached = this.responseCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
         return { message: cached.message };
@@ -380,7 +395,9 @@ Hướng dẫn trả lời:
 - Trả lời ngắn gọn, dùng gạch đầu dòng nếu có nhiều ý, có thể dùng **in đậm** cho từ khoá quan trọng
       `.trim();
 
-      const replyText = await this.generateWithFallback(ragPrompt);
+      const replyText = await this.generateWithFallback(
+        this.buildContents(ragPrompt, history),
+      );
       if (!replyText) {
         // the model itself is unreachable right now (overloaded, or the
         // generation quota's blown too) — answer directly from whatever
@@ -554,12 +571,32 @@ Hướng dẫn trả lời:
     return msg.includes('RESOURCE_EXHAUSTED') || msg.includes('"code":429');
   }
 
-  private async generateWithFallback(prompt: string): Promise<string | null> {
+  // layers the last few turns of conversation ahead of the current,
+  // fully-instructed prompt — the system prompt/library facts/grounding
+  // rules are re-sent every turn (this API is stateless request/response,
+  // not a persistent chat session) but the model still sees what was
+  // actually asked and answered before it, so a follow-up like "tác giả
+  // cuốn đó là ai?" resolves against the previous turn instead of nothing
+  private buildContents(
+    ragPrompt: string,
+    history: ChatHistoryTurnDto[],
+  ): GeminiContent[] {
+    const recent = history.slice(-8);
+    const historyContents: GeminiContent[] = recent.map((h) => ({
+      role: h.role,
+      parts: [{ text: h.text }],
+    }));
+    return [...historyContents, { role: 'user', parts: [{ text: ragPrompt }] }];
+  }
+
+  private async generateWithFallback(
+    contents: GeminiContent[],
+  ): Promise<string | null> {
     for (const modelName of this.CHAT_MODELS) {
       try {
         const response = await this.genAI!.models.generateContent({
           model: modelName,
-          contents: prompt,
+          contents,
         });
         if (response.text) return response.text;
       } catch (err) {
