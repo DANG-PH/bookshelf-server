@@ -16,6 +16,7 @@ import { DiaryModule } from './modules/diary/diary.module';
 import { MemoriesModule } from './modules/memories/memories.module';
 import { AuthorLocksModule } from './modules/author-locks/author-locks.module';
 import { AiModule } from './modules/ai/ai.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -37,6 +38,7 @@ import { HealthController } from './health.controller';
     MemoriesModule,
     AuthorLocksModule,
     AiModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
   providers: [

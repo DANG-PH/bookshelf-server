@@ -13,6 +13,7 @@ import { Book } from '../../database/entities/book.entity';
 import { MAX_PDF_SIZE_BYTES } from '../../common/utils/storage';
 import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { UpdateBookStatusDto } from './dto/update-book-status.dto';
@@ -40,6 +41,7 @@ export class BooksService {
     private readonly categoriesService: CategoriesService,
     private readonly config: ConfigService,
     private readonly aiService: AiService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads');
   }
@@ -86,9 +88,12 @@ export class BooksService {
     });
 
     const saved = await this.booksRepo.save(book);
-    // never awaited — indexing shouldn't hold up the response for
-    // whoever's adding the book
+    // neither of these is awaited — indexing and logging a notification
+    // shouldn't hold up the response for whoever's adding the book
     this.aiService.indexBookInBackground(saved);
+    this.notificationsService
+      .create(`Đã thêm sách mới: "${saved.title}"`)
+      .catch(() => undefined);
     return saved;
   }
 

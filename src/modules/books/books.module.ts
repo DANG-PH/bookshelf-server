@@ -10,6 +10,7 @@ import {
 import { Book } from '../../database/entities/book.entity';
 import { AiModule } from '../ai/ai.module';
 import { CategoriesModule } from '../categories/categories.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { BookLookupService } from './book-lookup.service';
 import { BooksController } from './books.controller';
 import { BooksService } from './books.service';
@@ -19,6 +20,7 @@ import { BooksService } from './books.service';
     TypeOrmModule.forFeature([Book]),
     CategoriesModule,
     AiModule,
+    NotificationsModule,
     MulterModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

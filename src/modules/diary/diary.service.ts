@@ -5,6 +5,8 @@ import {
   DiaryAuthor,
   DiaryEntry,
 } from '../../database/entities/diary-entry.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { SettingsService } from '../settings/settings.service';
 import { CreateDiaryEntryDto } from './dto/create-diary-entry.dto';
 import { QueryDiaryDto } from './dto/query-diary.dto';
 import { QueryPrivateDiaryDto } from './dto/query-private-diary.dto';
@@ -22,6 +24,8 @@ export class DiaryService {
   constructor(
     @InjectRepository(DiaryEntry)
     private readonly diaryRepo: Repository<DiaryEntry>,
+    private readonly notificationsService: NotificationsService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async findAll(query: QueryDiaryDto): Promise<PaginatedDiaryEntries> {
@@ -60,9 +64,23 @@ export class DiaryService {
     return { items, total, limit, offset };
   }
 
-  create(dto: CreateDiaryEntryDto): Promise<DiaryEntry> {
+  async create(dto: CreateDiaryEntryDto): Promise<DiaryEntry> {
     const entry = this.diaryRepo.create(dto);
-    return this.diaryRepo.save(entry);
+    const saved = await this.diaryRepo.save(entry);
+    // never awaited — only the shared diary notifies (a private entry
+    // must never surface who wrote it, or that anything was written at
+    // all, to the other person)
+    this.notifyNewEntry(saved).catch(() => undefined);
+    return saved;
+  }
+
+  private async notifyNewEntry(entry: DiaryEntry): Promise<void> {
+    const settings = await this.settingsService.get();
+    const name =
+      entry.author === 'me'
+        ? settings.curatorName || 'Đăng'
+        : settings.partnerName || 'Vy';
+    await this.notificationsService.create(`${name} vừa thêm nhật ký mới`);
   }
 
   // "Nhật ký riêng" — each author's own space, never surfaced to the
