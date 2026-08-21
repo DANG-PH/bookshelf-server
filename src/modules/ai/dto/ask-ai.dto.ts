@@ -1,26 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize,
-  IsArray,
-  IsIn,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
-  ValidateNested,
 } from 'class-validator';
-
-export class ChatHistoryTurnDto {
-  @ApiProperty({ enum: ['user', 'model'] })
-  @IsIn(['user', 'model'])
-  role: 'user' | 'model';
-
-  @ApiProperty()
-  @IsString()
-  @MaxLength(2000)
-  text: string;
-}
 
 export class AskAiDto {
   @ApiProperty({ description: 'Câu hỏi gửi cho chatbot thư viện' })
@@ -30,14 +15,10 @@ export class AskAiDto {
   message: string;
 
   @ApiPropertyOptional({
-    type: [ChatHistoryTurnDto],
     description:
-      'Vài lượt hỏi-đáp gần nhất trong cuộc trò chuyện (client tự giữ, gửi kèm mỗi lần) — để chatbot trả lời nối tiếp được ngữ cảnh câu hỏi trước',
+      'ID cuộc trò chuyện đang tiếp tục — bỏ trống để bắt đầu cuộc trò chuyện mới. Lịch sử được lấy từ DB theo id này, không phải do client tự gửi lên.',
   })
   @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(12)
-  @ValidateNested({ each: true })
-  @Type(() => ChatHistoryTurnDto)
-  history?: ChatHistoryTurnDto[];
+  @IsUUID()
+  sessionId?: string;
 }

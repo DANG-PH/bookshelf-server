@@ -3,6 +3,8 @@ import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AuthorLock } from '../database/entities/author-lock.entity';
 import { Book } from '../database/entities/book.entity';
 import { Category } from '../database/entities/category.entity';
+import { ChatMessage } from '../database/entities/chat-message.entity';
+import { ChatSession } from '../database/entities/chat-session.entity';
 import { DiaryEntry } from '../database/entities/diary-entry.entity';
 import { Memory } from '../database/entities/memory.entity';
 import { Notification } from '../database/entities/notification.entity';
@@ -25,6 +27,8 @@ export function buildTypeOrmConfig(
       Memory,
       AuthorLock,
       Notification,
+      ChatSession,
+      ChatMessage,
     ],
     // Fine for a small personal project seeded/managed by one person.
     // Switch to migrations if this ever needs to run against data you

@@ -7,7 +7,8 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { Repository } from 'typeorm';
 import { Book } from '../../database/entities/book.entity';
-import { ChatHistoryTurnDto } from './dto/ask-ai.dto';
+import { ChatMessage } from '../../database/entities/chat-message.entity';
+import { ChatSessionsService } from '../chat-sessions/chat-sessions.service';
 import { chunkPdf } from './rag/pdf-chunker';
 import { EmbeddedChunk, InMemoryVectorStore } from './rag/vector-store';
 
@@ -107,6 +108,7 @@ export class AiService implements OnModuleInit {
   constructor(
     private readonly config: ConfigService,
     @InjectRepository(Book) private readonly booksRepo: Repository<Book>,
+    private readonly chatSessionsService: ChatSessionsService,
   ) {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
     this.genAI = apiKey ? new GoogleGenAI({ apiKey }) : null;
@@ -308,18 +310,45 @@ export class AiService implements OnModuleInit {
     this.persistIndex().catch(() => undefined);
   }
 
+  // sessionId is DB-backed conversation history (GET/POST /ai/sessions),
+  // not something the client assembles and sends up — a stale/deleted id
+  // just quietly starts a fresh session rather than erroring
   async chatCompletion(
     message: string,
-    history: ChatHistoryTurnDto[] = [],
-  ): Promise<{ message: string }> {
+    sessionId?: string,
+  ): Promise<{ message: string; sessionId: string }> {
+    const session = sessionId
+      ? ((await this.chatSessionsService.findSession(sessionId)) ??
+        (await this.chatSessionsService.createSession()))
+      : await this.chatSessionsService.createSession();
+
+    const replyText = await this.generateReply(message, session.id);
+
+    // persisted regardless of which branch produced replyText (a real
+    // generation, the "chatbot chưa bật" notice, or a fallback reply) —
+    // the stored conversation should always match what was actually shown
+    await this.chatSessionsService.appendMessage(session.id, 'user', message);
+    await this.chatSessionsService.appendMessage(
+      session.id,
+      'model',
+      replyText,
+    );
+    await this.chatSessionsService.touchSession(session.id, message);
+
+    return { message: replyText, sessionId: session.id };
+  }
+
+  private async generateReply(
+    message: string,
+    sessionId: string,
+  ): Promise<string> {
     if (!this.genAI) {
-      return {
-        message:
-          'Chatbot chưa được bật — cần cấu hình GEMINI_API_KEY trước đã.',
-      };
+      return 'Chatbot chưa được bật — cần cấu hình GEMINI_API_KEY trước đã.';
     }
 
     try {
+      const history = await this.chatSessionsService.recentHistory(sessionId);
+
       // history is part of the cache key too — the same question can get
       // a different answer depending on what was asked before it
       const cacheKey = this.hashKey(
@@ -330,7 +359,7 @@ export class AiService implements OnModuleInit {
       );
       const cached = this.responseCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
-        return { message: cached.message };
+        return cached.message;
       }
 
       // runs on every question, not just ones that look like they're
@@ -402,18 +431,18 @@ Hướng dẫn trả lời:
         // the model itself is unreachable right now (overloaded, or the
         // generation quota's blown too) — answer directly from whatever
         // book metadata matched instead of just apologizing
-        return { message: this.metadataOnlyReply(metadataMatches) };
+        return this.metadataOnlyReply(metadataMatches);
       }
 
       this.responseCache.set(cacheKey, {
         message: replyText,
         expiresAt: Date.now() + CACHE_TTL_MS,
       });
-      return { message: replyText };
+      return replyText;
     } catch (err) {
       this.lastError = (err as Error).message;
       this.logger.error(`[AI] chatCompletion lỗi: ${(err as Error).message}`);
-      return { message: 'Có lỗi xảy ra, thử lại nhé.' };
+      return 'Có lỗi xảy ra, thử lại nhé.';
     }
   }
 
@@ -579,10 +608,9 @@ Hướng dẫn trả lời:
   // cuốn đó là ai?" resolves against the previous turn instead of nothing
   private buildContents(
     ragPrompt: string,
-    history: ChatHistoryTurnDto[],
+    history: ChatMessage[],
   ): GeminiContent[] {
-    const recent = history.slice(-8);
-    const historyContents: GeminiContent[] = recent.map((h) => ({
+    const historyContents: GeminiContent[] = history.map((h) => ({
       role: h.role,
       parts: [{ text: h.text }],
     }));

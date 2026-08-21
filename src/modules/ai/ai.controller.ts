@@ -12,7 +12,7 @@ export class AiController {
   @Post('ask')
   @ApiOperation({ summary: 'Hỏi chatbot về các sách trong thư viện (RAG)' })
   ask(@Body() dto: AskAiDto) {
-    return this.aiService.chatCompletion(dto.message, dto.history);
+    return this.aiService.chatCompletion(dto.message, dto.sessionId);
   }
 
   @Get('status')
