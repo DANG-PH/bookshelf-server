@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UploadedFiles,
   UseInterceptors,
@@ -19,8 +20,10 @@ import { BookLookupService } from './book-lookup.service';
 import { BooksService } from './books.service';
 import type { UploadedBookFiles } from './books.service';
 import { CreateBookDto } from './dto/create-book.dto';
+import { ToggleBookFavoriteDto } from './dto/toggle-book-favorite.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { UpdateBookStatusDto } from './dto/update-book-status.dto';
+import { UpsertBookReviewDto } from './dto/upsert-book-review.dto';
 
 const UPLOAD_FIELDS = [
   { name: 'file', maxCount: 1 },
@@ -75,6 +78,22 @@ export class BooksController {
   @HttpCode(HttpStatus.NO_CONTENT)
   incrementView(@Param('id', ParseUUIDPipe) id: string) {
     return this.booksService.incrementView(id);
+  }
+
+  @Patch(':id/favorite')
+  toggleFavorite(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ToggleBookFavoriteDto,
+  ) {
+    return this.booksService.toggleFavorite(id, dto.author);
+  }
+
+  @Put(':id/reviews')
+  upsertReview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpsertBookReviewDto,
+  ) {
+    return this.booksService.upsertReview(id, dto);
   }
 
   @Post()

@@ -10,6 +10,10 @@ import { join } from 'path';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Book } from '../../database/entities/book.entity';
+import {
+  BookReview,
+  BookReviewAuthor,
+} from '../../database/entities/book-review.entity';
 import { MAX_PDF_SIZE_BYTES } from '../../common/utils/storage';
 import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
@@ -17,6 +21,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { UpdateBookStatusDto } from './dto/update-book-status.dto';
+import { UpsertBookReviewDto } from './dto/upsert-book-review.dto';
 
 export interface UploadedBookFiles {
   file?: Express.Multer.File[];
@@ -38,6 +43,8 @@ export class BooksService {
   constructor(
     @InjectRepository(Book)
     private readonly booksRepo: Repository<Book>,
+    @InjectRepository(BookReview)
+    private readonly bookReviewsRepo: Repository<BookReview>,
     private readonly categoriesService: CategoriesService,
     private readonly config: ConfigService,
     private readonly aiService: AiService,
@@ -50,7 +57,7 @@ export class BooksService {
     return this.booksRepo.find({
       where: categoryId ? { categoryId } : {},
       order: { createdAt: 'ASC' },
-      relations: { category: true },
+      relations: { category: true, reviews: true },
     });
   }
 
@@ -61,6 +68,42 @@ export class BooksService {
     });
     if (!book) throw new NotFoundException('Không tìm thấy sách');
     return book;
+  }
+
+  // per-author, same reasoning as DiaryEntry.likedBy — one person's
+  // heart shouldn't silently overwrite the other's
+  async toggleFavorite(id: string, author: BookReviewAuthor): Promise<Book> {
+    const book = await this.findOne(id);
+    const set = new Set(book.favoritedBy || []);
+    if (set.has(author)) set.delete(author);
+    else set.add(author);
+    book.favoritedBy = [...set];
+    return this.booksRepo.save(book);
+  }
+
+  // upserts the caller's own rating/review — sending both empty deletes
+  // that person's row entirely rather than leaving an empty husk behind
+  async upsertReview(
+    bookId: string,
+    dto: UpsertBookReviewDto,
+  ): Promise<BookReview | null> {
+    await this.findOne(bookId); // 404s if the book doesn't exist
+
+    const existing = await this.bookReviewsRepo.findOne({
+      where: { bookId, author: dto.author },
+    });
+    const hasContent = dto.rating != null || Boolean(dto.review?.trim());
+
+    if (!hasContent) {
+      if (existing) await this.bookReviewsRepo.remove(existing);
+      return null;
+    }
+
+    const entity =
+      existing ?? this.bookReviewsRepo.create({ bookId, author: dto.author });
+    entity.rating = dto.rating ?? null;
+    entity.review = dto.review?.trim() || null;
+    return this.bookReviewsRepo.save(entity);
   }
 
   async create(dto: CreateBookDto, files: UploadedBookFiles): Promise<Book> {
@@ -143,9 +186,6 @@ export class BooksService {
   async updateStatus(id: string, dto: UpdateBookStatusDto): Promise<Book> {
     const book = await this.findOne(id);
     if (dto.readStatus !== undefined) book.readStatus = dto.readStatus;
-    if (dto.isFavorite !== undefined) book.isFavorite = dto.isFavorite;
-    if (dto.rating !== undefined) book.rating = dto.rating;
-    if (dto.review !== undefined) book.review = dto.review;
     return this.booksRepo.save(book);
   }
 

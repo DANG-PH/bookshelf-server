@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AuthorLock } from '../database/entities/author-lock.entity';
 import { Book } from '../database/entities/book.entity';
+import { BookReview } from '../database/entities/book-review.entity';
 import { Category } from '../database/entities/category.entity';
 import { ChatMessage } from '../database/entities/chat-message.entity';
 import { ChatSession } from '../database/entities/chat-session.entity';
@@ -22,6 +23,7 @@ export function buildTypeOrmConfig(
     entities: [
       Category,
       Book,
+      BookReview,
       SiteSetting,
       DiaryEntry,
       Memory,

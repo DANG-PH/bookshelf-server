@@ -4,9 +4,11 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { BookReview } from './book-review.entity';
 import { Category } from './category.entity';
 
 @Entity('books')
@@ -64,23 +66,22 @@ export class Book {
   @Column({ type: 'varchar', nullable: true })
   readStatus: string | null;
 
-  @Column({ default: false })
-  isFavorite: boolean;
+  // which of the two people have favorited this — per-author, same
+  // reasoning as DiaryEntry.likedBy: one person's heart shouldn't
+  // silently overwrite the other's
+  @Column({ type: 'simple-array', nullable: true })
+  favoritedBy: ('me' | 'partner')[];
 
   // bumped by POST /books/:id/view whenever someone opens the file —
   // purely a lightweight "đã xem N lần" badge, not an analytics system
   @Column({ type: 'int', default: 0 })
   viewCount: number;
 
-  // personal rating (1–5) + written review, set the same way as
-  // isFavorite/readStatus — by whoever's browsing, not just whoever
-  // added the book. Independent of readStatus so a rating never gets
-  // silently wiped by a status change.
-  @Column({ type: 'int', nullable: true })
-  rating: number | null;
-
-  @Column({ type: 'text', nullable: true })
-  review: string | null;
+  // each person's own rating + review lives in a separate row (see
+  // BookReview) instead of a single shared column — one person rating
+  // a book shouldn't overwrite the other's opinion of it
+  @OneToMany(() => BookReview, (r) => r.book)
+  reviews: BookReview[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

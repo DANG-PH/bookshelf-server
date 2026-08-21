@@ -375,10 +375,13 @@ export class AiService implements OnModuleInit {
     }
     try {
       const allBooks = await this.booksRepo.find({
-        relations: { category: true },
+        relations: { category: true, reviews: true },
       });
       const seeds = allBooks.filter(
-        (b) => b.isFavorite || b.readStatus === 'done' || (b.rating ?? 0) >= 4,
+        (b) =>
+          (b.favoritedBy || []).length > 0 ||
+          b.readStatus === 'done' ||
+          (b.reviews || []).some((r) => (r.rating ?? 0) >= 4),
       );
       if (!seeds.length) {
         return 'Đánh dấu yêu thích, đọc xong, hoặc chấm sao vài cuốn sách đã nhé — mình sẽ dựa vào đó để gợi ý sách hợp gu bạn hơn.';

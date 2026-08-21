@@ -68,9 +68,12 @@ export class CatalogService {
             file: resolveAsset(b.fileUrl),
             cover: resolveAsset(b.coverUrl),
             readStatus: b.readStatus,
-            isFavorite: b.isFavorite,
-            rating: b.rating,
-            review: b.review,
+            favoritedBy: b.favoritedBy || [],
+            reviews: (b.reviews || []).map((r) => ({
+              author: r.author,
+              rating: r.rating,
+              review: r.review,
+            })),
             viewCount: b.viewCount,
             // "Mới" is computed on the frontend from this instead of a
             // stored flag — no cron/queue needed to expire it after a day
