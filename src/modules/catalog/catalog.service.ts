@@ -68,6 +68,8 @@ export class CatalogService {
             file: resolveAsset(b.fileUrl),
             cover: resolveAsset(b.coverUrl),
             readStatus: b.readStatus,
+            startedAt: b.startedAt,
+            finishedAt: b.finishedAt,
             favoritedBy: b.favoritedBy || [],
             // newest first — this is a running log of entries, not one
             // slot per person, so recency is the natural order
@@ -84,6 +86,20 @@ export class CatalogService {
                 rating: r.rating,
                 review: r.review,
                 createdAt: r.createdAt,
+              })),
+            // newest first, same reasoning as reviews above
+            quotes: (b.quotes || [])
+              .slice()
+              .sort(
+                (a, c) =>
+                  new Date(c.createdAt).getTime() -
+                  new Date(a.createdAt).getTime(),
+              )
+              .map((q) => ({
+                id: q.id,
+                text: q.text,
+                page: q.page,
+                createdAt: q.createdAt,
               })),
             viewCount: b.viewCount,
             // "Mới" is computed on the frontend from this instead of a

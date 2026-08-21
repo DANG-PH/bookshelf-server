@@ -23,6 +23,7 @@ import { ToggleBookFavoriteDto } from './dto/toggle-book-favorite.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { UpdateBookStatusDto } from './dto/update-book-status.dto';
 import { CreateBookReviewDto } from './dto/create-book-review.dto';
+import { CreateBookQuoteDto } from './dto/create-book-quote.dto';
 
 const UPLOAD_FIELDS = [
   { name: 'file', maxCount: 1 },
@@ -102,6 +103,23 @@ export class BooksController {
     @Param('reviewId', ParseUUIDPipe) reviewId: string,
   ) {
     return this.booksService.deleteReview(id, reviewId);
+  }
+
+  @Post(':id/quotes')
+  addQuote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateBookQuoteDto,
+  ) {
+    return this.booksService.addQuote(id, dto);
+  }
+
+  @Delete(':id/quotes/:quoteId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteQuote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('quoteId', ParseUUIDPipe) quoteId: string,
+  ) {
+    return this.booksService.deleteQuote(id, quoteId);
   }
 
   @Post()

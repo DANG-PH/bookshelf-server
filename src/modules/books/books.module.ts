@@ -8,6 +8,7 @@ import {
   MAX_PDF_SIZE_BYTES,
 } from '../../common/utils/storage';
 import { Book } from '../../database/entities/book.entity';
+import { BookQuote } from '../../database/entities/book-quote.entity';
 import { BookReview } from '../../database/entities/book-review.entity';
 import { AiModule } from '../ai/ai.module';
 import { CategoriesModule } from '../categories/categories.module';
@@ -18,7 +19,7 @@ import { BooksService } from './books.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Book, BookReview]),
+    TypeOrmModule.forFeature([Book, BookReview, BookQuote]),
     CategoriesModule,
     AiModule,
     NotificationsModule,

@@ -10,6 +10,7 @@ import { join } from 'path';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Book } from '../../database/entities/book.entity';
+import { BookQuote } from '../../database/entities/book-quote.entity';
 import {
   BookReview,
   BookReviewAuthor,
@@ -22,6 +23,7 @@ import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { UpdateBookStatusDto } from './dto/update-book-status.dto';
 import { CreateBookReviewDto } from './dto/create-book-review.dto';
+import { CreateBookQuoteDto } from './dto/create-book-quote.dto';
 
 export interface UploadedBookFiles {
   file?: Express.Multer.File[];
@@ -45,6 +47,8 @@ export class BooksService {
     private readonly booksRepo: Repository<Book>,
     @InjectRepository(BookReview)
     private readonly bookReviewsRepo: Repository<BookReview>,
+    @InjectRepository(BookQuote)
+    private readonly bookQuotesRepo: Repository<BookQuote>,
     private readonly categoriesService: CategoriesService,
     private readonly config: ConfigService,
     private readonly aiService: AiService,
@@ -57,7 +61,7 @@ export class BooksService {
     return this.booksRepo.find({
       where: categoryId ? { categoryId } : {},
       order: { createdAt: 'ASC' },
-      relations: { category: true, reviews: true },
+      relations: { category: true, reviews: true, quotes: true },
     });
   }
 
@@ -110,6 +114,27 @@ export class BooksService {
     });
     if (!review) throw new NotFoundException('Không tìm thấy đánh giá');
     await this.bookReviewsRepo.remove(review);
+  }
+
+  // no author on a quote — it's the book's own words, not either
+  // person's opinion — so unlike reviews there's no "whose entry is
+  // this" to gate deletion behind; either person can remove any of them
+  async addQuote(bookId: string, dto: CreateBookQuoteDto): Promise<BookQuote> {
+    await this.findOne(bookId); // 404s if the book doesn't exist
+    const entity = this.bookQuotesRepo.create({
+      bookId,
+      text: dto.text.trim(),
+      page: dto.page ?? null,
+    });
+    return this.bookQuotesRepo.save(entity);
+  }
+
+  async deleteQuote(bookId: string, quoteId: string): Promise<void> {
+    const quote = await this.bookQuotesRepo.findOne({
+      where: { id: quoteId, bookId },
+    });
+    if (!quote) throw new NotFoundException('Không tìm thấy trích dẫn');
+    await this.bookQuotesRepo.remove(quote);
   }
 
   async create(dto: CreateBookDto, files: UploadedBookFiles): Promise<Book> {
@@ -191,7 +216,21 @@ export class BooksService {
   // touches files or requires multipart parsing
   async updateStatus(id: string, dto: UpdateBookStatusDto): Promise<Book> {
     const book = await this.findOne(id);
-    if (dto.readStatus !== undefined) book.readStatus = dto.readStatus;
+    if (dto.readStatus !== undefined) {
+      const next = dto.readStatus;
+      // real timestamps instead of guessing from updatedAt (which
+      // changes on any edit, not just a status change) — these back
+      // both the "đọc năm nay" stat and the "đọc dở lâu rồi" nudge
+      if (next === 'reading' && book.readStatus !== 'reading') {
+        book.startedAt = new Date();
+      }
+      if (next === 'done' && book.readStatus !== 'done') {
+        book.finishedAt = new Date();
+      }
+      if (next !== 'done') book.finishedAt = null;
+      if (next !== 'reading' && next !== 'done') book.startedAt = null;
+      book.readStatus = next;
+    }
     return this.booksRepo.save(book);
   }
 

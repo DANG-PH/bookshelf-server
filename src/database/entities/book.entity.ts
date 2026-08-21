@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { BookQuote } from './book-quote.entity';
 import { BookReview } from './book-review.entity';
 import { Category } from './category.entity';
 
@@ -66,6 +67,16 @@ export class Book {
   @Column({ type: 'varchar', nullable: true })
   readStatus: string | null;
 
+  // set/cleared by BooksService.updateStatus() alongside readStatus —
+  // lets "reading stats" and the "đọc dở lâu rồi" nudge be based on real
+  // timestamps instead of guessing from updatedAt (which changes on any
+  // edit, not just a status change)
+  @Column({ type: 'timestamptz', nullable: true })
+  startedAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  finishedAt: Date | null;
+
   // which of the two people have favorited this — per-author, same
   // reasoning as DiaryEntry.likedBy: one person's heart shouldn't
   // silently overwrite the other's
@@ -82,6 +93,12 @@ export class Book {
   // a book shouldn't overwrite the other's opinion of it
   @OneToMany(() => BookReview, (r) => r.book)
   reviews: BookReview[];
+
+  // memorable passages saved while reading — plain text, no author (a
+  // quote is the book's own words, not anyone's opinion), any number
+  // per book
+  @OneToMany(() => BookQuote, (q) => q.book)
+  quotes: BookQuote[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
