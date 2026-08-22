@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { mkdirSync } from 'fs';
 import { extname } from 'path';
 import { diskStorage } from 'multer';
 import { v4 as uuidv4 } from 'uuid';
@@ -6,13 +7,24 @@ import { v4 as uuidv4 } from 'uuid';
 const PDF_TYPES = ['application/pdf'];
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
+// multer's diskStorage never creates its destination folder — it just
+// fails the upload if it's missing. UPLOAD_DIR is commonly a mounted
+// volume kept outside the git repo specifically so deploys don't touch
+// it, so a subfolder a new feature needs (e.g. "diary") can easily not
+// exist yet on a server that's never had one before. Cheap to make this
+// self-healing instead of a silent 500 on the first upload.
+function ensureDir(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 // single storage engine shared by the "file" (pdf) and "cover" (image)
 // fields — routes each upload to its own subfolder by fieldname
 export function bookAssetsStorage(uploadDir: string) {
   return diskStorage({
     destination: (_req, file, cb) => {
       const subfolder = file.fieldname === 'cover' ? 'covers' : 'books';
-      cb(null, `${uploadDir}/${subfolder}`);
+      cb(null, ensureDir(`${uploadDir}/${subfolder}`));
     },
     filename: (_req, file, cb) => {
       cb(null, `${uuidv4()}${extname(file.originalname).toLowerCase()}`);
@@ -24,7 +36,8 @@ export function bookAssetsStorage(uploadDir: string) {
 // picture into its own subfolder" without book-specific field routing
 export function imageAssetStorage(uploadDir: string, subfolder: string) {
   return diskStorage({
-    destination: (_req, _file, cb) => cb(null, `${uploadDir}/${subfolder}`),
+    destination: (_req, _file, cb) =>
+      cb(null, ensureDir(`${uploadDir}/${subfolder}`)),
     filename: (_req, file, cb) => {
       cb(null, `${uuidv4()}${extname(file.originalname).toLowerCase()}`);
     },
