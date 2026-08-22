@@ -4,7 +4,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as webpush from 'web-push';
 import { PushSubscription } from '../../database/entities/push-subscription.entity';
+import { DiscordAlertService } from '../notifications/discord-alert.service';
 import { SubscribePushDto } from './dto/subscribe-push.dto';
+
+export interface RequestMeta {
+  ip: string;
+  userAgent: string;
+}
 
 export interface PushPayload {
   title: string;
@@ -34,6 +40,7 @@ export class PushService {
     @InjectRepository(PushSubscription)
     private readonly subsRepo: Repository<PushSubscription>,
     private readonly config: ConfigService,
+    private readonly discordAlert: DiscordAlertService,
   ) {
     this.publicKey = this.config.get<string>('VAPID_PUBLIC_KEY', '');
     const privateKey = this.config.get<string>('VAPID_PRIVATE_KEY', '');
@@ -55,7 +62,7 @@ export class PushService {
     return { publicKey: this.publicKey, configured: this.configured };
   }
 
-  async subscribe(dto: SubscribePushDto): Promise<void> {
+  async subscribe(dto: SubscribePushDto, meta: RequestMeta): Promise<void> {
     const existing = await this.subsRepo.findOne({
       where: { endpoint: dto.endpoint },
     });
@@ -63,10 +70,22 @@ export class PushService {
     entity.p256dh = dto.keys.p256dh;
     entity.auth = dto.keys.auth;
     await this.subsRepo.save(entity);
+    // only a genuinely new device, not a re-subscribe of the same endpoint —
+    // a sensitive-enough event for the admin to know about, same as a login
+    if (!existing) {
+      this.discordAlert.pushSubscribed(meta).catch(() => undefined);
+    }
   }
 
   async unsubscribe(endpoint: string): Promise<void> {
     await this.subsRepo.delete({ endpoint });
+  }
+
+  // pinged from the frontend's `appinstalled` event — the only signal the
+  // backend ever gets that someone actually installed the PWA, since that
+  // event only fires in the browser
+  async trackAppInstalled(meta: RequestMeta): Promise<void> {
+    await this.discordAlert.appInstalled(meta);
   }
 
   // used by NotificationsService (fire-and-forget there — a push failure

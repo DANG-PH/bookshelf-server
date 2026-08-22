@@ -81,6 +81,37 @@ export class DiscordAlertService {
     ]);
   }
 
+  // fires only for a genuinely new device (PushService checks that before
+  // calling this) — re-subscribing the same device on the same endpoint
+  // doesn't ping again
+  async pushSubscribed(meta: { ip: string; userAgent: string }): Promise<void> {
+    const location = await this.lookupLocation(meta.ip);
+    await this.send('Có thiết bị mới đăng ký nhận thông báo', COLOR.GREEN, [
+      { name: 'Thời gian', value: this.nowVN(), inline: true },
+      {
+        name: 'Thiết bị',
+        value: this.describeDevice(meta.userAgent),
+        inline: true,
+      },
+      { name: 'IP', value: meta.ip || 'Không rõ', inline: true },
+      { name: 'Vị trí (ước lượng theo IP)', value: location, inline: true },
+    ]);
+  }
+
+  async appInstalled(meta: { ip: string; userAgent: string }): Promise<void> {
+    const location = await this.lookupLocation(meta.ip);
+    await this.send('Có người vừa cài app Thư Viện', COLOR.GREEN, [
+      { name: 'Thời gian', value: this.nowVN(), inline: true },
+      {
+        name: 'Thiết bị',
+        value: this.describeDevice(meta.userAgent),
+        inline: true,
+      },
+      { name: 'IP', value: meta.ip || 'Không rõ', inline: true },
+      { name: 'Vị trí (ước lượng theo IP)', value: location, inline: true },
+    ]);
+  }
+
   private async send(
     title: string,
     color: number,

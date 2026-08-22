@@ -6,8 +6,10 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { PushService } from './push.service';
 import { SubscribePushDto } from './dto/subscribe-push.dto';
 import { UnsubscribePushDto } from './dto/unsubscribe-push.dto';
@@ -25,8 +27,22 @@ export class PushController {
 
   @Post('subscribe')
   @HttpCode(HttpStatus.NO_CONTENT)
-  subscribe(@Body() dto: SubscribePushDto) {
-    return this.pushService.subscribe(dto);
+  subscribe(@Body() dto: SubscribePushDto, @Req() req: Request) {
+    return this.pushService.subscribe(dto, {
+      ip: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+    });
+  }
+
+  // pinged once from the frontend's `appinstalled` event — no body needed,
+  // just a "someone installed the app" signal for the admin's Discord
+  @Post('app-installed')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  appInstalled(@Req() req: Request) {
+    return this.pushService.trackAppInstalled({
+      ip: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+    });
   }
 
   @Delete('subscribe')
