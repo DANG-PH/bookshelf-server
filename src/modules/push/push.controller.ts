@@ -34,4 +34,16 @@ export class PushController {
   unsubscribe(@Body() dto: UnsubscribePushDto) {
     return this.pushService.unsubscribe(dto.endpoint);
   }
+
+  // diagnostic — sends one real push to every subscribed device right
+  // now and reports exactly how many succeeded/failed and why, so
+  // "does push actually work" is answerable from the API response
+  // alone, no server log access needed
+  @Post('test')
+  test() {
+    return this.pushService.sendToAll({
+      title: 'Thử thông báo',
+      body: 'Nếu thấy dòng này là thông báo đẩy đang hoạt động đúng rồi!',
+    });
+  }
 }

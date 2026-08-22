@@ -14,6 +14,16 @@ export interface PushPayload {
   url?: string;
 }
 
+export interface PushSendResult {
+  total: number;
+  sent: number;
+  failed: number;
+  // one entry per failed subscription — endpoint host only (not the
+  // full endpoint, which is effectively a secret) plus whatever the
+  // push service said, so a failure is diagnosable without server logs
+  errors: { endpointHost: string; error: string }[];
+}
+
 @Injectable()
 export class PushService {
   private readonly logger = new Logger(PushService.name);
@@ -59,15 +69,23 @@ export class PushService {
     await this.subsRepo.delete({ endpoint });
   }
 
-  // fire-and-forget from NotificationsService — a push failure should
-  // never block or fail the thing that triggered the notification.
-  // Stale subscriptions (endpoint expired, browser data cleared, …) come
-  // back as 404/410 from the push service; those get pruned automatically
-  // instead of failing forever on every future notification.
-  async sendToAll(payload: PushPayload): Promise<void> {
-    if (!this.configured) return;
-    const subs = await this.subsRepo.find();
-    if (!subs.length) return;
+  // used by NotificationsService (fire-and-forget there — a push failure
+  // should never block or fail the thing that triggered the
+  // notification) and by the /push/test endpoint (which does read the
+  // result, so a "did it actually work" check doesn't need server log
+  // access). Stale subscriptions (expired endpoint, browser data
+  // cleared, …) come back as 404/410 from the push service; those get
+  // pruned automatically instead of failing forever on every future
+  // notification.
+  async sendToAll(payload: PushPayload): Promise<PushSendResult> {
+    const subs = this.configured ? await this.subsRepo.find() : [];
+    const result: PushSendResult = {
+      total: subs.length,
+      sent: 0,
+      failed: 0,
+      errors: [],
+    };
+    if (!this.configured || !subs.length) return result;
 
     const body = JSON.stringify(payload);
     await Promise.all(
@@ -80,8 +98,24 @@ export class PushService {
             },
             body,
           );
+          result.sent++;
         } catch (err) {
+          result.failed++;
           const statusCode = (err as { statusCode?: number }).statusCode;
+          const message =
+            (err as { body?: string; message?: string }).body ??
+            (err as { message?: string }).message ??
+            String(err);
+          let endpointHost = '(endpoint không hợp lệ)';
+          try {
+            endpointHost = new URL(sub.endpoint).host;
+          } catch {
+            // leave the fallback above
+          }
+          result.errors.push({
+            endpointHost,
+            error: statusCode ? `HTTP ${statusCode}: ${message}` : message,
+          });
           if (statusCode === 404 || statusCode === 410) {
             await this.subsRepo.delete({ id: sub.id }).catch(() => undefined);
           } else {
@@ -90,5 +124,6 @@ export class PushService {
         }
       }),
     );
+    return result;
   }
 }
