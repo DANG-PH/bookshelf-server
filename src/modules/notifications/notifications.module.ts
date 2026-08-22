@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Notification } from '../../database/entities/notification.entity';
+import { PushModule } from '../push/push.module';
 import { DiscordAlertService } from './discord-alert.service';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
@@ -13,7 +14,7 @@ import { NotificationsService } from './notifications.service';
 // existed — just don't let a future edit here drop one while touching
 // the other again.
 @Module({
-  imports: [TypeOrmModule.forFeature([Notification])],
+  imports: [TypeOrmModule.forFeature([Notification]), PushModule],
   controllers: [NotificationsController],
   providers: [NotificationsService, DiscordAlertService],
   exports: [NotificationsService, DiscordAlertService],

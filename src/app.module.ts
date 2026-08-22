@@ -17,6 +17,7 @@ import { MemoriesModule } from './modules/memories/memories.module';
 import { AuthorLocksModule } from './modules/author-locks/author-locks.module';
 import { AiModule } from './modules/ai/ai.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PushModule } from './modules/push/push.module';
 import { SearchModule } from './modules/search/search.module';
 import { HealthController } from './health.controller';
 
@@ -40,6 +41,7 @@ import { HealthController } from './health.controller';
     AuthorLocksModule,
     AiModule,
     NotificationsModule,
+    PushModule,
     SearchModule,
   ],
   controllers: [HealthController],

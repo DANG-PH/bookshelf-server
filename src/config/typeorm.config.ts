@@ -10,6 +10,7 @@ import { ChatSession } from '../database/entities/chat-session.entity';
 import { DiaryEntry } from '../database/entities/diary-entry.entity';
 import { Memory } from '../database/entities/memory.entity';
 import { Notification } from '../database/entities/notification.entity';
+import { PushSubscription } from '../database/entities/push-subscription.entity';
 import { SiteSetting } from '../database/entities/site-setting.entity';
 
 export function buildTypeOrmConfig(
@@ -33,6 +34,7 @@ export function buildTypeOrmConfig(
       Notification,
       ChatSession,
       ChatMessage,
+      PushSubscription,
     ],
     // Fine for a small personal project seeded/managed by one person.
     // Switch to migrations if this ever needs to run against data you

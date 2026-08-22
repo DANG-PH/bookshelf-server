@@ -93,6 +93,23 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AI_SYSTEM_PROMPT?: string;
+
+  // Optional — powers real push notifications (works even when the site
+  // isn't open, like a native app). Leave unset and PushService just
+  // silently skips sending — nothing else breaks. Generate a pair with
+  // `npx web-push generate-vapid-keys` and never rotate it once devices
+  // have subscribed, or they'll all need to re-subscribe from scratch.
+  @IsOptional()
+  @IsString()
+  VAPID_PUBLIC_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  VAPID_PRIVATE_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  VAPID_SUBJECT?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

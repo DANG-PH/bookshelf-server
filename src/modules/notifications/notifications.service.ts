@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 import { Notification } from '../../database/entities/notification.entity';
+import { PushService } from '../push/push.service';
 
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const LIST_LIMIT = 50;
@@ -16,6 +17,7 @@ export class NotificationsService {
   constructor(
     @InjectRepository(Notification)
     private readonly notificationsRepo: Repository<Notification>,
+    private readonly pushService: PushService,
   ) {}
 
   async findRecent(): Promise<Notification[]> {
@@ -26,9 +28,15 @@ export class NotificationsService {
     });
   }
 
-  create(text: string): Promise<Notification> {
+  async create(text: string): Promise<Notification> {
     const notification = this.notificationsRepo.create({ text });
-    return this.notificationsRepo.save(notification);
+    const saved = await this.notificationsRepo.save(notification);
+    // never awaited — a push failure must never fail whatever triggered
+    // this notification (adding a book, writing a diary entry, …)
+    this.pushService
+      .sendToAll({ title: 'Thư Viện', body: text })
+      .catch(() => undefined);
+    return saved;
   }
 
   async markRead(id: string): Promise<void> {
