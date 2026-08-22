@@ -33,5 +33,6 @@ import { DiaryService } from './diary.service';
   ],
   controllers: [DiaryController],
   providers: [DiaryService],
+  exports: [DiaryService],
 })
 export class DiaryModule {}

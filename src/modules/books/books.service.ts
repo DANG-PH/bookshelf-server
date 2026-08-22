@@ -65,6 +65,40 @@ export class BooksService {
     });
   }
 
+  // used by RemindersService's "đọc dở lâu rồi" nudge — same threshold
+  // and same startedAt-based logic as the frontend's own stalled-books
+  // card, just queryable server-side for the cron job
+  async findStalledReading(days: number): Promise<Book[]> {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    return this.booksRepo
+      .createQueryBuilder('book')
+      .where('book.readStatus = :status', { status: 'reading' })
+      .andWhere('book.startedAt IS NOT NULL')
+      .andWhere('book.startedAt <= :cutoff', { cutoff })
+      .orderBy('book.startedAt', 'ASC')
+      .getMany();
+  }
+
+  // used by RemindersService's occasional "nhớ lại câu này" nudge —
+  // picks uniformly at random across all saved quotes, not just recent
+  // ones, so an old favorite has just as much chance to resurface.
+  // Random-offset-in-app instead of ORDER BY RANDOM()/RAND(): those are
+  // spelled differently on postgres vs mysql, and this stays portable
+  // without needing to branch on DB_TYPE (fine perf-wise too — this is
+  // a personal library's worth of quotes, not a large table)
+  async getRandomQuote(): Promise<{ bookTitle: string; text: string } | null> {
+    const count = await this.bookQuotesRepo.count();
+    if (count === 0) return null;
+    const offset = Math.floor(Math.random() * count);
+    const [quote] = await this.bookQuotesRepo.find({
+      relations: { book: true },
+      skip: offset,
+      take: 1,
+    });
+    if (!quote) return null;
+    return { bookTitle: quote.book.title, text: quote.text };
+  }
+
   async findOne(id: string): Promise<Book> {
     const book = await this.booksRepo.findOne({
       where: { id },

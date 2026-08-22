@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { validate } from './config/env.validation';
@@ -18,12 +19,14 @@ import { AuthorLocksModule } from './modules/author-locks/author-locks.module';
 import { AiModule } from './modules/ai/ai.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PushModule } from './modules/push/push.module';
+import { RemindersModule } from './modules/reminders/reminders.module';
 import { SearchModule } from './modules/search/search.module';
 import { HealthController } from './health.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -42,6 +45,7 @@ import { HealthController } from './health.controller';
     AiModule,
     NotificationsModule,
     PushModule,
+    RemindersModule,
     SearchModule,
   ],
   controllers: [HealthController],

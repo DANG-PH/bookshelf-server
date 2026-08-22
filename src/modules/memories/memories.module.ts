@@ -8,5 +8,6 @@ import { MemoriesService } from './memories.service';
   imports: [TypeOrmModule.forFeature([Memory])],
   controllers: [MemoriesController],
   providers: [MemoriesService],
+  exports: [MemoriesService],
 })
 export class MemoriesModule {}

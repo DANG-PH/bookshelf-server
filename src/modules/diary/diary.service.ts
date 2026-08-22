@@ -97,6 +97,20 @@ export class DiaryService {
       .getMany();
   }
 
+  // used by RemindersService's "lâu rồi chưa viết" nudge — shared
+  // entries only, same reasoning as onThisDay above (a quiet private
+  // diary is nobody else's business to be nudged about)
+  async daysSinceLastSharedEntry(): Promise<number | null> {
+    const latest = await this.diaryRepo.findOne({
+      where: { isPrivate: false },
+      order: { createdAt: 'DESC' },
+    });
+    if (!latest) return null;
+    return Math.floor(
+      (Date.now() - latest.createdAt.getTime()) / (24 * 60 * 60 * 1000),
+    );
+  }
+
   async create(dto: CreateDiaryEntryDto): Promise<DiaryEntry> {
     const entry = this.diaryRepo.create(dto);
     const saved = await this.diaryRepo.save(entry);
