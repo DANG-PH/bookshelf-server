@@ -19,7 +19,16 @@ async function bootstrap() {
   // req.ip resolves to nginx's own address instead of the real client's
   (app.getHttpAdapter().getInstance() as Express).set('trust proxy', 1);
 
-  app.use(helmet());
+  // helmet's default Cross-Origin-Resource-Policy is "same-origin", which
+  // silently blocks the browser from loading <img> tags whose src points
+  // here — the frontend (book.dangpham.id.vn) and this API
+  // (book-api.dangpham.id.vn) are different origins. That's invisible in
+  // curl/Postman (CORP is a browser-enforced check, not a server-side
+  // rejection) and doesn't break fetch()-based JSON calls (already CORS'd
+  // above), only plain image embeds — which is exactly why diary/cover
+  // photos failed to load with no visible error until now. GET /api/files
+  // is already @Public() specifically to be embeddable this way.
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.enableCors({
     origin: config.get<string>('CORS_ORIGIN', '*'),
   });
