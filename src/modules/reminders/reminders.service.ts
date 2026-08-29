@@ -86,7 +86,7 @@ export class RemindersService {
       const yearsAgo = thisYear - entry.createdAt.getFullYear();
       const preview = this.truncate(entry.content, 80);
       await this.notificationsService.create(
-        `✨ ${yearsAgo} năm trước hôm nay, có dòng nhật ký này: "${preview}"`,
+        `${yearsAgo} năm trước, đúng ngày này: "${preview}"`,
       );
       return true;
     }
@@ -97,7 +97,7 @@ export class RemindersService {
         : memory.createdAt;
       const yearsAgo = thisYear - basis.getFullYear();
       await this.notificationsService.create(
-        `✨ ${yearsAgo} năm trước, có kỷ niệm "${memory.title}" đấy — còn nhớ không?`,
+        `${yearsAgo} năm trước, có một kỷ niệm: "${memory.title}"`,
       );
       return true;
     }
@@ -119,7 +119,7 @@ export class RemindersService {
     const book = stalled[0];
     const daysReading = Math.floor(this.daysSince(book.startedAt));
     await this.notificationsService.create(
-      `📖 "${book.title}" vẫn để "Đang đọc" ${daysReading} ngày rồi đó, đọc tiếp thôi!`,
+      `"${book.title}" đã ở trạng thái "Đang đọc" ${daysReading} ngày.`,
     );
     state.lastStalledBookAt = new Date();
     await this.stateRepo.save(state);
@@ -139,7 +139,7 @@ export class RemindersService {
       return false;
     }
     await this.notificationsService.create(
-      `✍️ Đã ${daysSinceLastEntry} ngày chưa có ai viết nhật ký chung rồi, viết vài dòng đi nhỉ?`,
+      `Đã ${daysSinceLastEntry} ngày chưa có nhật ký chung mới.`,
     );
     state.lastQuietDiaryAt = new Date();
     await this.stateRepo.save(state);
@@ -177,7 +177,7 @@ export class RemindersService {
     const book = await this.booksService.findRandomUnstarted();
     if (!book) return false;
     await this.notificationsService.create(
-      `📚 "${book.title}" vẫn đang nằm chờ trong tủ sách kìa, đọc thử chưa?`,
+      `"${book.title}" vẫn đang chờ trong tủ sách, chưa đọc tới.`,
     );
     state.lastUnreadSuggestAt = new Date();
     await this.stateRepo.save(state);
