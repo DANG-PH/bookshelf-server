@@ -17,4 +17,7 @@ export class ReminderState {
 
   @Column({ type: 'timestamptz', nullable: true })
   lastQuoteResurfaceAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastUnreadSuggestAt: Date | null;
 }

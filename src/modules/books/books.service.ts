@@ -99,6 +99,22 @@ export class BooksService {
     return { bookTitle: quote.book.title, text: quote.text };
   }
 
+  // used by RemindersService's occasional "còn cuốn này chưa đọc" nudge —
+  // 'want' (đánh dấu "muốn đọc") or never touched at all (null), same
+  // random-offset approach as getRandomQuote() above for the same reason
+  async findRandomUnstarted(): Promise<Book | null> {
+    const qb = this.booksRepo
+      .createQueryBuilder('book')
+      .where('book.readStatus IS NULL OR book.readStatus = :want', {
+        want: 'want',
+      });
+    const count = await qb.getCount();
+    if (count === 0) return null;
+    const offset = Math.floor(Math.random() * count);
+    const [book] = await qb.orderBy('book.id').skip(offset).take(1).getMany();
+    return book || null;
+  }
+
   async findOne(id: string): Promise<Book> {
     const book = await this.booksRepo.findOne({
       where: { id },

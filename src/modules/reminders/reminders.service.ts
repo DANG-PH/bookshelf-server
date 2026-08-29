@@ -8,21 +8,26 @@ import { DiaryService } from '../diary/diary.service';
 import { MemoriesService } from '../memories/memories.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
-const STALLED_DAYS = 30;
-const STALLED_COOLDOWN_DAYS = 7;
-const QUIET_DIARY_DAYS = 7;
-const QUIET_DIARY_COOLDOWN_DAYS = 7;
-const QUOTE_COOLDOWN_DAYS = 5;
+const STALLED_DAYS = 14;
+const STALLED_COOLDOWN_DAYS = 3;
+const QUIET_DIARY_DAYS = 3;
+const QUIET_DIARY_COOLDOWN_DAYS = 3;
+const QUOTE_COOLDOWN_DAYS = 2;
+const UNREAD_SUGGEST_COOLDOWN_DAYS = 2;
 const STATE_ID = 1;
 
 // a once-a-day "is there anything worth mentioning" check, not a fixed
 // notification schedule — checked in priority order, sends at most ONE
 // notification per run (never stacks multiple), and stays completely
 // silent on a day none of the conditions apply. Each type below has its
-// own cooldown so a condition that stays true for weeks (a stalled
-// book, a quiet diary) doesn't turn into a daily nag once it fires —
-// the balance the "thêm sách/nhật ký" event notifications alone were
-// too sparse to provide, without tipping into too many either.
+// own (short) cooldown so a condition that stays true for a while (a
+// stalled book, a quiet diary) doesn't turn into a daily nag once it
+// fires. Two low-stakes fallbacks (quote resurface, unread suggestion)
+// each cycle every couple of days on independent cooldowns, so on most
+// days there's *something* to say even when nothing meaningful
+// happened — the "thêm sách/nhật ký" event notifications alone were too
+// sparse on their own, so this fills the gaps without tipping into
+// spam (still capped at one notification per day, always).
 @Injectable()
 export class RemindersService {
   private readonly logger = new Logger(RemindersService.name);
@@ -44,7 +49,8 @@ export class RemindersService {
       if (await this.tryOnThisDay()) return;
       if (await this.tryStalledBook()) return;
       if (await this.tryQuietDiary()) return;
-      await this.tryQuoteResurface();
+      if (await this.tryQuoteResurface()) return;
+      await this.tryUnreadSuggestion();
     } catch (err) {
       this.logger.warn(`[Reminders] Lỗi khi chạy nhắc định kỳ: ${String(err)}`);
     }
@@ -98,9 +104,11 @@ export class RemindersService {
     return false;
   }
 
-  // "đọc dở lâu rồi" — same 30-day threshold as the frontend's own
-  // stalled-books card, throttled to once a week so it doesn't repeat
-  // daily for as long as the book stays untouched
+  // "đọc dở lâu rồi" — same startedAt-based idea as the frontend's own
+  // stalled-books card (30-day threshold there, since that one's a
+  // persistent on-page notice rather than a one-off ping — this fires
+  // sooner, at 14 days, and re-throttles itself after each nudge so it
+  // doesn't repeat daily for as long as the book stays untouched
   private async tryStalledBook(): Promise<boolean> {
     const state = await this.getState();
     if (this.daysSince(state.lastStalledBookAt) < STALLED_COOLDOWN_DAYS) {
@@ -151,6 +159,27 @@ export class RemindersService {
       `❝ ${this.truncate(quote.text, 150)} ❞ — trích từ "${quote.bookTitle}"`,
     );
     state.lastQuoteResurfaceAt = new Date();
+    await this.stateRepo.save(state);
+    return true;
+  }
+
+  // "còn cuốn này chưa đọc" — the other low-stakes filler, checked last.
+  // Independent cooldown from tryQuoteResurface() above means the two
+  // alternate rather than compete: whichever's cooldown happens to be up
+  // fills a day the more meaningful checks above had nothing to say
+  private async tryUnreadSuggestion(): Promise<boolean> {
+    const state = await this.getState();
+    if (
+      this.daysSince(state.lastUnreadSuggestAt) < UNREAD_SUGGEST_COOLDOWN_DAYS
+    ) {
+      return false;
+    }
+    const book = await this.booksService.findRandomUnstarted();
+    if (!book) return false;
+    await this.notificationsService.create(
+      `📚 "${book.title}" vẫn đang nằm chờ trong tủ sách kìa, đọc thử chưa?`,
+    );
+    state.lastUnreadSuggestAt = new Date();
     await this.stateRepo.save(state);
     return true;
   }
