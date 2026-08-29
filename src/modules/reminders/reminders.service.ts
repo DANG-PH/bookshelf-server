@@ -155,8 +155,11 @@ export class RemindersService {
     }
     const quote = await this.booksService.getRandomQuote();
     if (!quote) return false;
+    // kept short enough (100, not 150) that the closing ❞ and the
+    // attribution still fit inside what a phone's notification tray
+    // actually shows before truncating the whole thing with its own "…"
     await this.notificationsService.create(
-      `❝ ${this.truncate(quote.text, 150)} ❞ — trích từ "${quote.bookTitle}"`,
+      `❝ ${this.truncate(quote.text, 100)} ❞ — trích từ "${quote.bookTitle}"`,
     );
     state.lastQuoteResurfaceAt = new Date();
     await this.stateRepo.save(state);
