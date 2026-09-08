@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Minimal HTTP wrapper around VI-Translate's translate_pdf.py.
 
-One request in flight at a time, on purpose: this container gets one
-CPU's worth of budget on a small VPS, and the caller (tech-books-backend's
-TranslationQueueService) only ever has one book queued for translation at
-a time anyway — see docs/vi-translate.md. http.server's HTTPServer is
-single-threaded by default, which is exactly the concurrency this wants,
-so there's nothing extra to build here for that.
+One /translate in flight at a time is the intent — this container gets
+one CPU's worth of budget on a small VPS, and the caller (tech-books-
+backend's TranslationWorkerService) only ever has one book queued at a
+time anyway, see docs/vi-translate.md. But that does NOT mean the whole
+server should go single-threaded: a plain HTTPServer processes exactly
+one connection at a time full stop, so a long /translate call (a real
+book easily runs past 5+ minutes) makes even a trivial /health check
+hang for the entire duration — confirmed the hard way with `curl
+/health` sitting there unanswered while a translation was in flight.
+ThreadingHTTPServer fixes that (each connection gets its own thread) —
+the concurrency limit that actually matters is enforced Node-side
+(TranslationWorkerService never sends a second /translate while one is
+running), not by however many threads this process happens to have.
 
 No framework (no FastAPI/uvicorn) — stdlib only. This is two routes and
 one subprocess call; a dependency here would just be one more thing that
@@ -15,7 +22,7 @@ can drift out of sync with whatever's actually pinned in requirements.txt.
 import json
 import subprocess
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 VI_TRANSLATE_DIR = Path(__file__).resolve().parent / "vi-translate"
@@ -126,4 +133,8 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"pdf-translator listening on :{PORT}", flush=True)
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    # daemon_threads so a still-running /translate thread never blocks
+    # the process from exiting on shutdown (docker stop, restart, ...)
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server.daemon_threads = True
+    server.serve_forever()

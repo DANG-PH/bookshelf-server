@@ -398,3 +398,26 @@ Deploy lại 3 file `.html` như thường lệ — không có gì đổi ở qu
 - Engine `google` không hỗ trợ sách cần OCR (bản scan) — nếu 1 cuốn báo lỗi
   vì lý do này, dịch tay theo mục 6 với cờ OCR thay vì trông cậy vào luồng
   tự động.
+
+### Sự cố từng gặp (đã sửa, để nhớ lý do)
+
+- **`Biên dịch lỗi: fetch failed`** — Node's `fetch()` báo lỗi kết nối
+  chung chung, nguyên nhân thật nằm ở `err.cause` mà `.message` một mình bỏ
+  qua. Đã sửa để lấy luôn `.cause` vào thông báo lỗi hiện trong admin.
+- **`Biên dịch lỗi: fetch failed: Headers Timeout Error`** — `fetch()` của
+  Node (chạy trên undici) có **timeout mặc định 5 phút** chờ header phản
+  hồi, trong khi sách dài dịch xong có thể mất lâu hơn thế, và
+  `server.py` phía Python cho phép tới 30 phút. Kết quả: job vẫn đang chạy
+  bình thường bên Python nhưng Node đã bỏ cuộc trước, báo `failed` oan. Đã
+  đổi từ `fetch()` sang `http`/`https.request()` thuần (không phụ thuộc
+  thêm gói nào), đặt timeout 31 phút — dài hơn timeout 30 phút của
+  `server.py` 1 chút để phía Python luôn là bên timeout trước và trả lỗi
+  có cấu trúc, thay vì Node đoán mò.
+- **`curl http://127.0.0.1:8787/health` bị treo trong lúc có job đang
+  chạy** — `server.py` trước đó dùng `HTTPServer` (xử lý đúng 1 kết nối 1
+  lúc, không phải chỉ 1 `/translate` 1 lúc mà là **toàn bộ server**), nên 1
+  job `/translate` đang chạy làm treo luôn cả `/health`. Đã đổi sang
+  `ThreadingHTTPServer` — mỗi kết nối 1 thread riêng, `/health` phản hồi
+  ngay cả khi có job nặng đang chạy. Giới hạn "1 cuốn 1 lúc" thật ra do
+  Node (`TranslationWorkerService`) tự kiểm soát, không cần server Python
+  đơn luồng để ép điều đó.

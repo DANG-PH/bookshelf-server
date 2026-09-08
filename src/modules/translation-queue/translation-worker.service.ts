@@ -3,8 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { promises as fs } from 'fs';
+import * as http from 'http';
+import * as https from 'https';
 import { join, posix } from 'path';
 import { Repository } from 'typeorm';
+import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { Book } from '../../database/entities/book.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -19,6 +22,17 @@ interface TranslateResponse {
 // real turnaround is dominated by however long the translator itself
 // takes (minutes), so this only needs to be "soon", not instant
 const POLL_CRON = '*/15 * * * * *';
+
+// must stay ABOVE pdf-translator/server.py's own TIMEOUT_SECONDS (30 min)
+// so the sidecar's own timeout fires first and hands back a real error —
+// found the hard way: Node's global fetch() (undici) has a *default*
+// headers-timeout of 5 minutes with no simple way to raise it without
+// pulling in `undici` as its own dependency just for that, so this uses
+// plain http/https.request() instead, which has no such ceiling of its
+// own — a translation that's still running at the 5-minute mark used to
+// come back as "fetch failed: Headers Timeout Error" even though the
+// sidecar was still working the whole time
+const TRANSLATE_TIMEOUT_MS = 31 * 60 * 1000;
 
 // single global concurrency, on purpose — the pdf-translator sidecar gets
 // one CPU's worth of budget on a small VPS (see pdf-translator/server.py),
@@ -94,17 +108,13 @@ export class TranslationWorkerService {
     );
 
     try {
-      const res = await fetch(`${this.translatorUrl}/translate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          inputPath: containerInputPath,
-          outputDir: containerJobDir,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as TranslateResponse;
-      if (!res.ok || !data.ok || !data.outputPath) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+      const { status, data } = await this.postJson(
+        `${this.translatorUrl}/translate`,
+        { inputPath: containerInputPath, outputDir: containerJobDir },
+        TRANSLATE_TIMEOUT_MS,
+      );
+      if (status < 200 || status >= 300 || !data.ok || !data.outputPath) {
+        throw new Error(data.error || `HTTP ${status}`);
       }
 
       // data.outputPath is the *container* path — same bytes are already
@@ -147,11 +157,64 @@ export class TranslationWorkerService {
     }
   }
 
-  // Node's fetch() throws a generic "fetch failed" for any connection-level
-  // problem (sidecar down, wrong PDF_TRANSLATOR_URL, refused connection...)
-  // — the actual reason lives on err.cause, which .message alone drops on
-  // the floor. Without this, every network failure looked identical and
-  // undiagnosable from the admin panel's error text alone.
+  // Plain http/https.request() instead of fetch() — see the comment on
+  // TRANSLATE_TIMEOUT_MS for why. `timeoutMs` is a socket-idle timeout
+  // (fires after that long with zero bytes exchanged either way, which is
+  // exactly what a slow /translate call looks like start to finish), not
+  // an overall deadline — fine here since nothing else is expected to sit
+  // idle on this connection.
+  private postJson(
+    urlStr: string,
+    body: unknown,
+    timeoutMs: number,
+  ): Promise<{ status: number; data: TranslateResponse }> {
+    return new Promise((resolve, reject) => {
+      const url = new URL(urlStr);
+      const payload = Buffer.from(JSON.stringify(body));
+      const client = url.protocol === 'https:' ? https : http;
+      const req = client.request(
+        {
+          hostname: url.hostname,
+          port: url.port || (url.protocol === 'https:' ? 443 : 80),
+          path: `${url.pathname}${url.search}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': payload.length,
+          },
+          timeout: timeoutMs,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const text = Buffer.concat(chunks).toString('utf-8');
+            let data: TranslateResponse = {};
+            try {
+              data = text ? (JSON.parse(text) as TranslateResponse) : {};
+            } catch {
+              // leave data as {} — the status code alone still gets surfaced
+            }
+            resolve({ status: res.statusCode ?? 0, data });
+          });
+        },
+      );
+      req.on('timeout', () =>
+        req.destroy(
+          new Error(`không phản hồi sau ${Math.round(timeoutMs / 1000)}s`),
+        ),
+      );
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  // the actual reason for a connection-level failure sometimes lives on
+  // err.cause (Node core network errors occasionally wrap it there) rather
+  // than err.message alone — cheap to check, and the difference between
+  // "fetch failed" and "fetch failed: connect ECONNREFUSED 127.0.0.1:8787"
+  // is the whole reason this exists
   private describeError(err: unknown): string {
     if (!(err instanceof Error)) return String(err);
     const cause = (err as Error & { cause?: unknown }).cause;
