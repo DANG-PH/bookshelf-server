@@ -69,6 +69,20 @@ export class Book {
   @Column({ type: 'varchar', nullable: true })
   detectedLanguage: 'vi' | 'foreign' | null;
 
+  // state of the automated translation job — see TranslationQueueService.
+  // null: never queued. 'queued': waiting for a worker slot (only one
+  // book translates at a time). 'processing': the PDF translator service
+  // is working on it right now. 'done': translatedFileUrl above is the
+  // result — once here, the auto-translate trigger is retired for this
+  // book for good (re-translating is a deliberate manual re-upload, not
+  // something the automated path repeats). 'failed': errored out,
+  // translationJobError has why, and admin can retry (re-queue).
+  @Column({ type: 'varchar', nullable: true })
+  translationJobStatus: 'queued' | 'processing' | 'done' | 'failed' | null;
+
+  @Column({ type: 'text', nullable: true })
+  translationJobError: string | null;
+
   // either a path served through GET /api/files/covers/:filename,
   // or an external http(s) URL — resolved as-is by the frontend
   @Column({ nullable: true })

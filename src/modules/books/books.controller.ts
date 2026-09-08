@@ -149,4 +149,13 @@ export class BooksController {
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.booksService.remove(id);
   }
+
+  // fire-and-forget from the admin's point of view — this just queues
+  // the job and returns immediately; TranslationWorkerService (polling,
+  // separate module) does the actual translating in the background and
+  // notifies through the existing bell/push channel when it's done
+  @Post(':id/translate')
+  queueTranslation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.booksService.queueTranslation(id);
+  }
 }

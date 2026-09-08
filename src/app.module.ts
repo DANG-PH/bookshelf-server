@@ -21,6 +21,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PushModule } from './modules/push/push.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { SearchModule } from './modules/search/search.module';
+import { TranslationQueueModule } from './modules/translation-queue/translation-queue.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -47,6 +48,7 @@ import { HealthController } from './health.controller';
     PushModule,
     RemindersModule,
     SearchModule,
+    TranslationQueueModule,
   ],
   controllers: [HealthController],
   providers: [

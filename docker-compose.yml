@@ -10,6 +10,25 @@ services:
     ports:
       - '127.0.0.1:5433:5432'
 
+  # sidecar for the "Biên dịch sang tiếng Việt" pipeline — see
+  # pdf-translator/Dockerfile and docs/vi-translate.md. Optional: the app
+  # runs fine without this, the translate feature just stays unavailable
+  # until PDF_TRANSLATOR_URL is set in .env pointing here.
+  pdf-translator:
+    build: ./pdf-translator
+    container_name: pdf-translator
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8787:8787'
+    volumes:
+      # must be the SAME folder the backend's own UPLOAD_DIR points at —
+      # this is how the two processes hand a PDF back and forth without a
+      # network file transfer. `docker compose` auto-loads the .env file
+      # sitting next to this docker-compose.yml, same file NestJS reads
+      # its own UPLOAD_DIR from — so as long as that .env sets it, both
+      # sides agree on the same path automatically, nothing to sync by hand.
+      - ${UPLOAD_DIR:-./uploads}:/uploads
+
 
 
 

@@ -110,6 +110,24 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   VAPID_SUBJECT?: string;
+
+  // Optional — base URL of the pdf-translator sidecar container (see
+  // docker-compose.yml and docs/vi-translate.md). Leave unset and the
+  // "Biên dịch sang tiếng Việt" trigger just stays unavailable — nothing
+  // else in the app depends on it.
+  @IsOptional()
+  @IsString()
+  PDF_TRANSLATOR_URL?: string;
+
+  // The same UPLOAD_DIR folder as seen from *inside* the pdf-translator
+  // container, not this process — docker-compose.yml bind-mounts
+  // UPLOAD_DIR there at this exact path, so a relative asset path like
+  // "books/xxx.pdf" resolves to <this>/books/xxx.pdf on that side, vs
+  // <UPLOAD_DIR>/books/xxx.pdf on this one. Only matters if
+  // PDF_TRANSLATOR_URL is set.
+  @IsOptional()
+  @IsString()
+  PDF_TRANSLATOR_UPLOAD_PATH: string = '/uploads';
 }
 
 export function validate(config: Record<string, unknown>) {

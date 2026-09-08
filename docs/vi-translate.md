@@ -1,181 +1,194 @@
 # Bản dịch tiếng Việt cho sách nước ngoài
 
-Cho phép mỗi cuốn sách có thêm 1 file PDF **bản dịch tiếng Việt**, tuỳ chọn,
-đính kèm bên cạnh file gốc — để không phải đọc bằng ngôn ngữ khác hoặc dịch
-từng đoạn qua trình duyệt khi đọc sách nước ngoài. Đi kèm là 1 cơ chế **tự
-động nhận diện ngôn ngữ** ngay lúc thêm sách, để không phải tự nhớ/đoán cuốn
-nào là sách nước ngoài, cuốn nào đã là tiếng Việt sẵn rồi.
+Mỗi cuốn sách có thể có thêm 1 file PDF **bản dịch tiếng Việt** đi kèm file
+gốc — để không phải đọc bằng ngôn ngữ khác hoặc dịch từng đoạn qua trình
+duyệt. Ngôn ngữ được **tự động nhận diện** ngay lúc thêm sách, và việc dịch
+thật sự cũng **tự động chạy trong 1 hàng đợi nền** — admin chỉ cần bấm 1 nút,
+không phải tự chạy công cụ dịch bằng tay nữa.
 
 > Toàn bộ tài liệu này viết cho môi trường **Linux** — cả máy dev cá nhân lẫn
-> VPS đều là Linux, không có phần Windows/macOS ở đây.
-
-> [!IMPORTANT]
-> **Ranh giới tự động hoá — đọc trước khi bối rối**: chỉ có **nhận diện
-> ngôn ngữ** (mục 1) là tự động, chạy ngay trong backend lúc thêm sách,
-> không cần làm gì thêm. Việc **dịch file PDF ra bản tiếng Việt thật sự**
-> (mục 2-3) **không tự động** — vẫn phải chạy tay ở máy cá nhân rồi upload
-> lại. Đây là 2 việc khác nhau: 1 cái là "biết cuốn nào cần dịch" (tự động),
-> 1 cái là "thực sự tạo ra bản dịch" (thủ công, có chủ đích — xem mục 5 vì
-> sao). Nhận diện tự động giúp *biết* cuốn nào đáng để dịch, không có nghĩa
-> là *tự dịch luôn*.
+> VPS đều là Linux.
 
 ## Mục lục
 
-1. [Tự động nhận diện ngôn ngữ](#1-tự-động-nhận-diện-ngôn-ngữ)
-2. [Dịch PDF bằng VI-Translate](#2-dịch-pdf-bằng-vi-translate)
-3. [Quy trình thêm bản dịch cho 1 cuốn sách](#3-quy-trình-thêm-bản-dịch-cho-1-cuốn-sách)
+1. [Tổng quan luồng nghiệp vụ (BA)](#1-tổng-quan-luồng-nghiệp-vụ-ba)
+2. [Tự động nhận diện ngôn ngữ](#2-tự-động-nhận-diện-ngôn-ngữ)
+3. [Kiến trúc hàng đợi biên dịch tự động](#3-kiến-trúc-hàng-đợi-biên-dịch-tự-động)
 4. [Chi tiết triển khai](#4-chi-tiết-triển-khai)
-5. [Vì sao không dịch ngay trong backend](#5-vì-sao-không-dịch-ngay-trong-backend)
-6. [Deploy lên VPS (Linux)](#6-deploy-lên-vps-linux)
+5. [Vì sao thiết kế như vậy](#5-vì-sao-thiết-kế-như-vậy)
+6. [Cách dịch tay (dự phòng / sách cần chất lượng cao hơn)](#6-cách-dịch-tay-dự-phòng--sách-cần-chất-lượng-cao-hơn)
+7. [Deploy lên VPS (Linux)](#7-deploy-lên-vps-linux)
 
 ---
 
-## 1. Tự động nhận diện ngôn ngữ
+## 1. Tổng quan luồng nghiệp vụ (BA)
+
+### Trạng thái của 1 cuốn sách
+
+Cột `translationJobStatus` trên `books`: `null` | `queued` | `processing` |
+`done` | `failed`. Kết hợp với `detectedLanguage` (`vi` | `foreign` | `null`)
+và `translatedFileUrl` (có file hay chưa) để quyết định UI/hành vi cho phép.
+
+| detectedLanguage | translationJobStatus | translatedFileUrl | Admin thấy gì | Được làm gì |
+| --- | --- | --- | --- | --- |
+| `vi` hoặc `null` | bất kỳ | — | Nhãn ngôn ngữ tương ứng (hoặc không có nhãn) | Không có nút "Biên dịch" — không nhận diện được là sách nước ngoài thì không đề xuất dịch |
+| `foreign` | `null` | không | Nhãn "Sách nước ngoài" | Nút **Biên dịch** |
+| `foreign` | `queued` | không | " · Đang chờ biên dịch…" | Không nút gì — đang xếp hàng |
+| `foreign` | `processing` | không | " · Đang biên dịch…" | Không nút gì — đang chạy thật |
+| `foreign` | `done` | có | " · Có bản dịch tiếng Việt" | **Không còn nút Biên dịch nữa** — không tự dịch lại. Muốn thay bản dịch thì upload tay qua ô "Bản dịch tiếng Việt (PDF)" ở form sửa (đường thủ công vẫn luôn mở, không bị khoá) |
+| `foreign` | `failed` | không | " · Biên dịch lỗi: <lý do>" | Nút **Thử lại** (gọi lại đúng luồng, coi như 1 lần biên dịch mới, không phải "biên dịch thêm lần nữa" của 1 bản đã xong) |
+
+Quy tắc cứng: **1 cuốn chỉ tự động biên dịch xong đúng 1 lần**. `done` là điểm
+dừng vĩnh viễn của luồng tự động — không có cách nào từ UI tự động kích hoạt
+dịch lại 1 cuốn đã `done`. Đây là điều bạn yêu cầu rõ ràng ("sách biên dịch
+rồi thì không được biên dịch lại").
+
+### Hành trình người dùng (admin)
+
+```
+Thêm sách → tự nhận diện ngôn ngữ
+  │
+  ├─ Tiếng Việt / không rõ → xong, không có gì thêm
+  │
+  └─ Sách nước ngoài → hỏi ngay: "Biên dịch sang tiếng Việt luôn không?"
+        │
+        ├─ Đồng ý → xếp hàng đợi ngay lúc đó
+        │
+        └─ Huỷ → KHÔNG mất cơ hội — danh sách sách vẫn có nút
+                  "Biên dịch" cho cuốn này, bấm được bất cứ lúc nào sau
+
+Vào hàng đợi (queued) → worker rảnh thì lấy ra xử lý (processing)
+        │
+        ├─ Thành công (done) → có file dịch, nút Biên dịch biến mất vĩnh viễn,
+        │                        có thông báo qua chuông/push:
+        │                        "Đã biên dịch xong "<tên sách>" sang tiếng Việt."
+        │
+        └─ Thất bại (failed) → hiện lý do lỗi ngay trong danh sách, có
+                                 thông báo: "Biên dịch "<tên sách>" thất bại,
+                                 thử lại nhé." Nút đổi thành "Thử lại".
+```
+
+Không có "huỷ 1 job đang chạy" ở bản này — 1 job `processing` luôn chạy tới
+khi xong hoặc lỗi (thường vài phút, không phải việc cần huỷ giữa chừng). Việc
+duy nhất "huỷ được" là ở bước hỏi lúc mới thêm sách — bấm Huỷ ở đó chỉ là
+"không làm ngay bây giờ", không phải huỷ vĩnh viễn.
+
+### Vì sao không dùng popup riêng cho thông báo "biên dịch xong"
+
+Đã có sẵn hệ thống chuông thông báo + push notification (dùng cho "thêm sách
+mới", nhắc nhở định kỳ...) — dùng lại đúng kênh đó
+(`NotificationsService.create()`) thay vì dựng thêm 1 cơ chế popup riêng chỉ
+cho mỗi việc này. Admin đã quen nhìn vào chuông, không cần học thêm 1 chỗ mới.
+
+---
+
+## 2. Tự động nhận diện ngôn ngữ
 
 Vấn đề cần giải: nếu để admin tự nhớ/đoán cuốn nào là sách nước ngoài để đi
-dịch, rất dễ nhầm — nhất là dịch nhầm 1 cuốn **đã là tiếng Việt sẵn** (vô
-nghĩa, tốn công). Nên việc nhận diện được làm **tự động, ngay lúc thêm sách**,
-không phụ thuộc vào admin phải tự phán đoán.
+dịch, rất dễ nhầm — nhất là dịch nhầm 1 cuốn **đã là tiếng Việt sẵn**. Nên
+việc nhận diện được làm **tự động, ngay lúc thêm sách**.
 
 ### Cách nhận diện
 
 Code ở [`src/modules/books/detect-language.ts`](../src/modules/books/detect-language.ts).
-Không dùng thư viện nhận diện ngôn ngữ tổng quát, không gọi API ngoài — vì bài
-toán thực tế ở đây hẹp hơn nhiều so với "đoán 1 trong hàng trăm ngôn ngữ": chỉ
-cần trả lời đúng 1 câu **"đây có phải tiếng Việt không"**.
+Không dùng thư viện nhận diện ngôn ngữ tổng quát, không gọi API ngoài — bài
+toán thực tế hẹp hơn nhiều so với "đoán 1 trong hàng trăm ngôn ngữ": chỉ cần
+trả lời đúng 1 câu **"đây có phải tiếng Việt không"**.
 
-Cách làm: đếm mật độ các ký tự chỉ tiếng Việt mới có —
-
-- Toàn bộ khối Unicode **Latin Extended Additional** (`U+1EA0`–`U+1EF9`) —
-  khối này gần như được tạo ra riêng cho các nguyên âm có dấu thanh của tiếng
-  Việt (ạ, ả, ấ, ầ, ẩ, ẫ, ậ, ẻ, ẽ, ế, ề, ể, ễ, ệ, ỉ, ị, ọ, ỏ, ố, ồ, ổ, ỗ, ộ,
-  ớ, ờ, ở, ỡ, ợ, ụ, ủ, ứ, ừ, ử, ữ, ự, ỳ, ỵ, ỷ, ỹ...).
-- Cộng thêm `đ/Đ`, `ơ/Ơ`, `ư/Ư` — cũng gần như chỉ tiếng Việt dùng.
-
-Văn xuôi tiếng Việt thật sự có tỉ lệ ký tự này rất cao (thường 20-40%+ tổng số
-chữ cái), trong khi bất kỳ ngôn ngữ Latin nào khác (Anh, Pháp, Đức, Tây Ban
-Nha...) gần như không bao giờ có — nếu có cũng chỉ 1-2 từ mượn tình cờ. Nên
-chỉ cần ngưỡng rất thấp (1%) là đủ phân biệt chắc chắn, không cần model hay
-thư viện gì.
+Cách làm: đếm mật độ các ký tự chỉ tiếng Việt mới có — toàn bộ khối Unicode
+**Latin Extended Additional** (`U+1EA0`–`U+1EF9`, gần như tạo ra riêng cho
+nguyên âm có dấu thanh tiếng Việt) cộng thêm `đ/Đ`, `ơ/Ơ`, `ư/Ư`. Văn xuôi
+tiếng Việt thật có tỉ lệ này rất cao (20-40%+ tổng số chữ cái), ngôn ngữ Latin
+khác gần như không bao giờ có. Ngưỡng 1% là đủ phân biệt chắc chắn:
 
 ```ts
 // đơn giản hoá từ detect-language.ts
 const VIETNAMESE_CHARS_RE = /[Ạ-ỹĐđƠơƯư]/g;
-const hits = text.match(VIETNAMESE_CHARS_RE) ?? [];
-const letters = text.match(/\p{L}/gu) ?? [];
-const isVietnamese = hits.length / letters.length >= 0.01;
+const isVietnamese =
+  (text.match(VIETNAMESE_CHARS_RE) ?? []).length /
+    (text.match(/\p{L}/gu) ?? []).length >=
+  0.01;
 ```
 
-### Lấy văn bản mẫu từ đâu
-
-Dùng thư viện `pdf-parse` **đã có sẵn** trong project (đang dùng cho tính
-năng hỏi-đáp AI qua RAG) — không thêm dependency nào mới. Chỉ đọc **5 trang
-đầu** của file PDF (đủ để có tín hiệu, đọc cả cuốn sách chỉ để lấy mẫu là phí
-thời gian không cần thiết).
-
-### Kết quả lưu ở đâu, dùng khi nào
-
-- Cột mới `detectedLanguage` trên bảng `books`, giá trị `'vi'` | `'foreign'` |
-  `null`.
-- `null` nghĩa là **không đủ tín hiệu để đoán** (PDF quét ảnh không có lớp
-  chữ, PDF bị mã hoá, trang đầu gần như trống...) — trường hợp này **không
-  đoán bừa**, cứ để trống, tốt hơn là đoán sai.
-- Tính lại **mỗi khi thêm sách mới**, và **mỗi khi sửa sách kèm đổi file PDF
-  gốc** (sửa những thứ khác như tên/tác giả/tag thì không tính lại — file
-  không đổi thì ngôn ngữ không đổi).
-- Hiện ngay trên trang admin: danh sách sách có thêm nhãn "Tiếng Việt" hoặc
-  "Sách nước ngoài" cạnh tên tác giả/chủ đề. Sách nào không đoán được thì
-  không có nhãn gì thêm.
-- Khi sửa 1 cuốn đã được nhận diện là **tiếng Việt** mà admin định upload
-  thêm 1 file "bản dịch", form sẽ tự hiện dòng nhắc: *"File sách này được
-  nhận diện là tiếng Việt sẵn rồi — có lẽ không cần thêm bản dịch"* — chỉ là
-  gợi ý, không chặn upload (vẫn có trường hợp nhận diện sai, ví dụ sách song
-  ngữ hoặc PDF scan lẫn lộn).
-
-Tính năng này **chỉ ở phía admin** — trang đọc sách (`index.html`) không hiện
-nhãn ngôn ngữ, vì mục đích duy nhất của nó là giúp admin quyết định có nên đi
-dịch cuốn nào hay không, không phải để phân loại cho người đọc.
+Lấy mẫu 5 trang đầu qua `pdf-parse` (đã có sẵn trong `package.json`, dùng cho
+RAG chatbot — không thêm dependency nào). `null` (không đoán được — PDF quét
+ảnh không lớp chữ, mã hoá...) thì để trống, không đoán bừa. Tính lại mỗi khi
+thêm sách mới và mỗi khi sửa sách kèm đổi file PDF gốc.
 
 ---
 
-## 2. Dịch PDF bằng VI-Translate
+## 3. Kiến trúc hàng đợi biên dịch tự động
 
-Việc dịch PDF **không nằm trong backend này** — xem lý do ở [mục 5](#5-vì-sao-không-dịch-ngay-trong-backend).
-Backend chỉ lưu file PDF dịch sẵn; việc tạo ra file đó làm ở máy cá nhân,
-bằng công cụ ngoài: **[VI-Translate](https://github.com/breslee1707/VI-Translate)**
-— dịch PDF sang tiếng Việt mà vẫn giữ nguyên bố cục, công thức, bảng, hình
-(quan trọng với sách kỹ thuật, khác hẳn kiểu dán từng đoạn vào Google
-Translate rồi mất sạch bố cục).
-
-### Cài đặt (Linux)
-
-Trên Ubuntu/Debian, `python3-venv` thường **không có sẵn** — thiếu gói này
-thì `python3 -m venv` báo lỗi `ensurepip is not available`. Cài trước:
-
-```bash
-python3 --version   # ví dụ: Python 3.12.3 — nhớ số bản, dùng ở dòng dưới
-sudo apt update
-sudo apt install python3.12-venv   # đổi "3.12" theo đúng version python3 --version vừa báo
+```
+┌─────────────────┐   POST /books/:id/translate   ┌──────────────────────┐
+│  admin.html      │ ─────────────────────────────▶│  BooksService        │
+│  (bấm "Biên dịch")│                               │  .queueTranslation() │
+└─────────────────┘                                 └──────────┬───────────┘
+                                                                │ set translationJobStatus='queued'
+                                                                ▼
+                                                     ┌──────────────────────┐
+                                    mỗi 15s   ◀──────│  Postgres: books     │
+                                    kiểm tra          └──────────┬───────────┘
+┌──────────────────────────┐                                    │
+│ TranslationWorkerService  │◀───────────────────────────────────┘
+│ (@Cron mỗi 15s + nudge    │  tìm book 'queued' cũ nhất, không có
+│  ngay lúc vừa xếp hàng)   │  book nào khác đang 'processing'
+└────────────┬───────────────┘
+             │ set 'processing', rồi gọi HTTP
+             ▼
+┌──────────────────────────┐   POST /translate    ┌───────────────────────────┐
+│  pdf-translator container │◀─────────────────────│ TranslationWorkerService  │
+│  (Docker, server.py +     │  {inputPath,          └───────────────────────────┘
+│   VI-Translate, engine    │   outputDir}
+│   "google")                │──────────────────────▶ {ok, outputPath}
+└──────────────────────────┘
+             │ đọc/ghi qua volume dùng chung
+             ▼
+     UPLOAD_DIR (host)  ==  /uploads (trong container pdf-translator)
 ```
 
-(Không chắc số bản, hoặc không dùng Ubuntu/Debian: `sudo apt install
-python3-venv` trước, thiếu thì apt sẽ tự gợi ý đúng tên gói version-cụ-thể
-cần cài như thông báo lỗi ở trên.)
+- **`TranslationWorkerService`** (`src/modules/translation-queue/`) — chạy
+  ngay trong process NestJS hiện có, **không phải** event listener
+  (`@nestjs/event-emitter`) và không phải service riêng biệt/Redis/BullMQ —
+  đơn giản hơn: 1 method `poll()` được gọi từ 2 chỗ:
+  - `@Cron('*/15 * * * * *')` — an toàn nền, đảm bảo job luôn được nhặt lên
+    kể cả khi backend vừa restart giữa lúc có sách đang `queued`.
+  - `BooksService.queueTranslation()` gọi thẳng `poll()` **ngay khi vừa xếp
+    hàng xong** (không `await`, không chặn response trả về admin) — để việc
+    xử lý bắt đầu gần như tức thì thay vì phải đợi tới lượt tick tiếp theo
+    (tối đa 15s). 2 đường gọi vào **cùng 1 method**, cùng logic, không có gì
+    khác nhau ngoài "khi nào được gọi".
 
-Sau đó mới clone và tạo venv:
+  Mỗi lần `poll()` chạy: nếu không có sách nào `processing` và có ít nhất 1
+  sách `queued`, lấy sách `queued` **cũ nhất** ra xử lý — xử lý đúng 1 cuốn 1
+  lúc, không song song. Lý do xem [mục 5](#5-vì-sao-thiết-kế-như-vậy).
 
-```bash
-git clone https://github.com/breslee1707/VI-Translate.git
-cd VI-Translate
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-```
-
-### Chọn chế độ dịch
-
-| Chế độ | Cách dịch | Dùng khi |
-| --- | --- | --- |
-| `google` | Gọi thẳng trang web dịch của Google (không cần key, nhưng dễ dịch sai thuật ngữ chuyên ngành) | Sách phổ thông, ít jargon |
-| `handoff` | Xuất đoạn văn ra JSONL, để 1 AI agent (Claude Code, Codex, Copilot...) dịch có ngữ cảnh rồi build lại PDF | **Sách kỹ thuật** — ví dụ thật trong README của họ: "conduction" bị Google dịch thành "dẫn điện", Handoff dịch đúng "dẫn nhiệt" |
-
-Thư viện này chủ yếu là sách kỹ thuật nên **ưu tiên `handoff`**.
-
-```bash
-# chế độ Handoff — khuyên dùng cho sách kỹ thuật
-.venv/bin/python scripts/translate_pdf.py INPUT.pdf --engine handoff --emit-segments segments.jsonl
-# nhờ 1 AI agent (vd. Claude Code, chạy ngay trong repo VI-Translate đã clone) dịch segments.jsonl -> translations.jsonl
-.venv/bin/python scripts/translate_pdf.py INPUT.pdf --engine handoff --segments translations.jsonl --output-dir OUT
-
-# hoặc đơn giản hơn — chế độ Google, không cần agent, chấp nhận độ chính xác thấp hơn
-.venv/bin/python scripts/translate_pdf.py INPUT.pdf --output-dir OUT
-```
-
-Kết quả nằm ở `OUT/INPUT-vi.pdf`.
-
----
-
-## 3. Quy trình thêm bản dịch cho 1 cuốn sách
-
-| Bước | Ai/cái gì làm |
-| --- | --- |
-| 1 | **Tự động** — backend làm |
-| 2 | **Thủ công** — bạn làm, ở máy cá nhân |
-| 3 | **Thủ công** — bạn làm, qua trang admin |
-| 4 | Tự động (chỉ là hiển thị) |
-
-1. Thêm sách vào thư viện như bình thường qua trang admin. **Không cần làm
-   gì thêm** — hệ thống tự nhận diện ngôn ngữ ngay lúc này (xem mục 1), tự
-   gắn nhãn "Tiếng Việt" hoặc "Sách nước ngoài" trong danh sách sách.
-2. Xem danh sách sách ở admin, cuốn nào gắn nhãn **"Sách nước ngoài"** mà
-   muốn có bản dịch thì **tự chạy VI-Translate ở máy cá nhân** (mục 2) —
-   bước này bắt buộc phải làm tay, xem [mục 5](#5-vì-sao-không-dịch-ngay-trong-backend)
-   để hiểu vì sao không thể tự động hoá được bước này.
-3. Cầm file PDF vừa dịch xong ở bước 2, vào trang admin → bấm **Sửa** trên
-   cuốn sách đó → mở mục **"Thêm chi tiết"** → ở ô **"Bản dịch tiếng Việt
-   (PDF)"**, chọn file đó → **Lưu**.
-4. Xong. Ở trang đọc sách, cuốn đó tự hiện thêm dòng **"Đọc bản dịch tiếng
-   Việt"** ngay dưới hàng trạng thái đọc trên thẻ sách — không cần làm gì
-   thêm ở bước này.
+  Về phần "fire-and-forget" bạn hỏi: đúng vậy — `POST /books/:id/translate`
+  chỉ set `translationJobStatus='queued'` trong Postgres rồi trả lời ngay,
+  **không đợi** việc dịch xong. Việc dịch thật sự chạy hoàn toàn tách biệt
+  khỏi mọi HTTP request, kể cả request đã tạo ra job đó — kết quả (xong hay
+  lỗi) chỉ được biết qua thông báo chuông/push sau này, không qua response
+  của request nào cả.
+- **`pdf-translator`** — container Docker riêng
+  ([`pdf-translator/Dockerfile`](../pdf-translator/Dockerfile),
+  [`server.py`](../pdf-translator/server.py)) đóng gói VI-Translate + Python.
+  `server.py` là 1 HTTP server tối giản (chỉ dùng thư viện chuẩn của Python,
+  không FastAPI/Flask) nhận `{inputPath, outputDir}`, chạy
+  `scripts/translate_pdf.py` (engine mặc định `google`), trả về
+  `{ok, outputPath}` hoặc `{ok:false, error}`.
+- **Thư mục dùng chung** — `docker-compose.yml` bind-mount `UPLOAD_DIR` của
+  backend vào `/uploads` trong container `pdf-translator`. 2 process thấy
+  cùng 1 file vật lý qua 2 đường dẫn khác nhau (`PDF_TRANSLATOR_UPLOAD_PATH`
+  cho phía container, `UPLOAD_DIR` cho phía NestJS) — không cần truyền file
+  qua mạng.
+- **Engine dịch: `google`, không phải `handoff`** — quyết định có chủ đích
+  sau khi cân nhắc: dùng Gemini (chế độ tương đương Handoff) sẽ chính xác
+  thuật ngữ hơn, nhưng tốn thêm token/chi phí Gemini mỗi cuốn sách, và API
+  key Gemini hiện tại nên **dành riêng cho chatbot** của thư viện, không chia
+  sẻ ngân sách với việc dịch hàng loạt đoạn văn. `google` miễn phí, không
+  đụng tới Gemini, đổi lại độ chính xác thuật ngữ chuyên ngành thấp hơn — nếu
+  1 cuốn cụ thể cần chất lượng cao hơn, vẫn dịch tay bằng Handoff được, xem
+  [mục 6](#6-cách-dịch-tay-dự-phòng--sách-cần-chất-lượng-cao-hơn).
 
 ---
 
@@ -183,122 +196,182 @@ Kết quả nằm ở `OUT/INPUT-vi.pdf`.
 
 **Backend** (`tech-books-backend`):
 
-- `Book` entity thêm 3 cột, tất cả nullable:
+- `Book` entity thêm các cột (tất cả nullable):
   - `translatedFileUrl`, `translatedFileOriginalName` — cùng kiểu với
-    `fileUrl`/`fileOriginalName` sẵn có.
-  - `detectedLanguage: 'vi' | 'foreign' | null` — set tự động, xem mục 1.
-- `POST /books` và `PATCH /books/:id` nhận thêm 1 field multipart tên
-  `translatedFile` (PDF), đi cùng `file` và `cover` sẵn có — cùng validate
-  PDF-only, cùng giới hạn dung lượng `MAX_PDF_SIZE_BYTES` (80MB), lưu vào
-  `UPLOAD_DIR/books/` như file gốc (không có subfolder riêng).
-- Không có field "dán link" cho bản dịch (khác với `pdfUrl` của file gốc) —
-  bản dịch luôn phải upload trực tiếp, không tải hộ từ URL, vì nó luôn được
-  tạo ra ở bước 2 rồi mới đưa vào đây.
-- `GET /catalog` (dùng bởi trang đọc) trả thêm field `translatedFile` (URL
-  tuyệt đối, đã resolve qua `/api/files/...`) trong mỗi book object — `null`
-  nếu chưa có bản dịch. `detectedLanguage` **không** có trong response này —
-  chỉ trả qua `GET /books` (dùng bởi trang admin).
-- Sửa/xoá sách thì file bản dịch cũ cũng được dọn theo (cùng cơ chế
-  `deleteLocalAsset` đang dùng cho `fileUrl`/`coverUrl`).
-- Không thêm dependency npm nào mới cho cả 2 tính năng — `pdf-parse` đã có
-  sẵn trong `package.json` từ trước (dùng cho RAG chatbot).
+    `fileUrl`/`fileOriginalName`.
+  - `detectedLanguage: 'vi' | 'foreign' | null`.
+  - `translationJobStatus: 'queued' | 'processing' | 'done' | 'failed' | null`.
+  - `translationJobError: string | null` — lý do lỗi lần gần nhất, hiện
+    thẳng trong danh sách sách ở admin.
+- `POST /books/:id/translate` (`BooksController`/`BooksService.queueTranslation`)
+  — validate rồi set `translationJobStatus='queued'`. Chặn nếu: sách không
+  phải `detectedLanguage==='foreign'`, đã có `translatedFileUrl`, hoặc đang
+  `queued`/`processing` sẵn. **Cho phép** re-queue khi đang `failed` (thử
+  lại).
+- `TranslationQueueModule` (`src/modules/translation-queue/`) — chỉ cần
+  `TypeOrmModule.forFeature([Book])` + `NotificationsModule`, đăng ký thẳng
+  trong `AppModule` giống `RemindersModule`. Có `exports: [TranslationWorkerService]`
+  để `BooksModule` import và gọi `poll()` ngay khi vừa xếp hàng (xem mục 3) —
+  chiều phụ thuộc chỉ 1 hướng (`BooksModule` → `TranslationQueueModule`),
+  không có gì import ngược lại nên không vòng lặp.
+- `POST /books` và `PATCH /books/:id` vẫn nhận field multipart `translatedFile`
+  như trước — đường **upload tay** không bị thay thế, chỉ là giờ có thêm
+  đường **tự động** song song. Không có field "dán link" cho bản dịch.
+- `GET /catalog` trả thêm `translatedFile` (URL tuyệt đối) — dùng chung cho
+  cả file đến từ tự động lẫn upload tay, trang đọc không phân biệt được và
+  không cần phân biệt. `detectedLanguage`/`translationJobStatus`/
+  `translationJobError` **chỉ** có trong `GET /books` (trang admin dùng).
+- Không thêm dependency npm nào — `pdf-parse` đã có sẵn; hàng đợi dùng
+  Postgres + `@nestjs/schedule` (đã cài từ tính năng nhắc nhở định kỳ), không
+  cần Redis/BullMQ.
 
-**Frontend** (`tech-books`):
+**Sidecar** (`pdf-translator/`, repo `tech-books-backend`):
 
-- `admin.html`: ô upload `translatedFile` trong mục "Thêm chi tiết" của form
-  thêm/sửa sách; danh sách sách hiện nhãn ngôn ngữ + "Có bản dịch tiếng Việt"
-  nếu có; hiện dòng nhắc khi sửa 1 cuốn tiếng-Việt-sẵn mà vẫn định thêm bản
-  dịch.
-- `index.html`: `cardHTML()` hiện thêm dòng "Đọc bản dịch tiếng Việt" (mở
-  file dịch ở tab mới) khi book có `translatedFile`, không hiện gì nếu
-  không có.
+- `Dockerfile` — `python:3.12-slim`, clone VI-Translate ở build time
+  (`ARG VI_TRANSLATE_REF`, mặc định `main` — nên ghim về 1 commit/tag cụ thể
+  1 khi mọi thứ chạy ổn, để repo đó đổi gì cũng không tự động đổi hành vi
+  service đang chạy), cài `requirements.txt` (không cài `requirements-ocr.txt`
+  — sách scan cần OCR không nằm trong luồng tự động này, xem mục 6).
+- `server.py` — HTTP server tối giản, 1 request xử lý tại 1 thời điểm (khớp
+  với việc `TranslationWorkerService` cũng chỉ xử lý 1 cuốn 1 lúc).
 
----
+**Frontend** (`tech-books`, `admin.html`):
 
-## 5. Vì sao không dịch ngay trong backend
+- Sau khi thêm sách, nếu `detectedLanguage==='foreign'`: `confirm()` hỏi có
+  muốn biên dịch ngay không.
+- Danh sách sách: nhãn ngôn ngữ, trạng thái biên dịch (đang chờ/đang
+  chạy/lỗi), nút **Biên dịch**/**Thử lại** theo đúng bảng ở mục 1.
+- Khi có sách đang `queued`/`processing`, tự làm mới danh sách mỗi 10 giây
+  (dừng ngay khi không còn job nào đang chạy) — thấy trạng thái cập nhật mà
+  không cần bấm F5.
 
-Cân nhắc rồi quyết định **không** gọi VI-Translate như 1 service chạy sau
-API, vì:
-
-- **Stack nặng**: VI-Translate cần cả 1 dàn Python + ML (numpy, opencv,
-  onnxruntime, pymupdf, model layout ONNX ~75MB...) — VPS hiện chỉ chạy
-  NestJS + Postgres nhẹ, không đáng cài thêm cả đống này chỉ để phục vụ 1
-  sự kiện hiếm (thêm sách nước ngoài mới).
-- **Chậm, không hợp với 1 request HTTP**: dịch cả cuốn sách mất vài phút
-  (không phải mili-giây) — phải làm hàng đợi job riêng mới chạy được trong
-  web app, thêm phức tạp không cần thiết cho 1 project cá nhân.
-- **Chế độ Google không chính thức**: chỉ là scrape trang web dịch của
-  Google, có thể gãy bất cứ lúc nào họ đổi giao diện — chạy tay và kiểm tra
-  kết quả từng lần vẫn ổn hơn để nó tự chạy ngầm trong production.
-- **Chế độ Handoff (bản dịch chính xác hơn) cần 1 AI agent thật** — backend
-  không tự làm được, muốn tự động hoá thì phải gọi thêm 1 API LLM riêng
-  (tốn phí theo lượng token, thêm hạ tầng).
-- **Giấy phép AGPL-3.0**: nếu biến VI-Translate thành 1 service chạy sau
-  API công khai thì phát sinh nghĩa vụ phải mở mã nguồn tương ứng theo điều
-  khoản AGPL. Dùng như công cụ ngoài (CLI/app desktop) chạy tay thì không
-  vướng gì.
-
-Riêng phần **nhận diện ngôn ngữ** (mục 1) thì ngược lại — đủ nhẹ và đủ nhanh
-(1 phép đếm ký tự trên vài trang PDF) nên chạy thẳng trong backend, ngay lúc
-thêm sách, không cần tách ra ngoài.
+`index.html` không đổi gì thêm so với tính năng "Đọc bản dịch tiếng Việt" đã
+có — file đến từ đâu (tự động hay upload tay) không quan trọng với trang đọc.
 
 ---
 
-## 6. Deploy lên VPS (Linux)
+## 5. Vì sao thiết kế như vậy
 
-Không có bước đặc biệt nào cho riêng 2 tính năng này — **không cần cài
-Python, không cần VI-Translate, không cần model gì trên VPS**, vì việc dịch
-xảy ra hoàn toàn ở máy cá nhân; phần nhận diện ngôn ngữ chỉ dùng `pdf-parse`
-vốn đã có sẵn trong `package.json`. Deploy đúng như quy trình backend bình
-thường của project.
+Bản đầu của tính năng này (trước khi có hàng đợi) cố tình **không** chạy
+VI-Translate trong backend — lý do lúc đó: chậm (không hợp 1 request HTTP),
+stack Python nặng, và giấy phép AGPL-3.0. Sau khi cân nhắc lại theo đúng yêu
+cầu "tự động, tiện lợi, hệ thống thông minh", từng lý do được giải quyết thay
+vì bỏ qua:
 
-### Backend
+- **"Chậm, không hợp 1 request HTTP"** → giải quyết bằng **hàng đợi**: admin
+  bấm nút, server trả lời ngay "đã xếp hàng", việc dịch thật chạy nền, xong
+  thì báo qua thông báo. Không có request nào phải đợi vài phút.
+- **"Stack Python nặng"** → giải quyết bằng **Docker**: cô lập hoàn toàn
+  trong 1 container riêng (`pdf-translator/`), không cài gì lên host VPS,
+  không đụng tới Python/venv của hệ thống (né đúng lỗi `ensurepip` bạn từng
+  gặp khi tự cài tay).
+- **"Engine Handoff cần AI agent thật, backend không tự làm được"** → không
+  dùng Handoff cho luồng tự động nữa — dùng thẳng engine `google` (không cần
+  AI agent, không cần LLM API key nào), đổi lại chất lượng thuật ngữ thấp hơn
+  1 chút cho những cuốn cần cao hơn thì vẫn dịch tay bằng Handoff được (mục 6).
+- **Giấy phép AGPL-3.0** — đây là điểm **chưa giải quyết hoàn toàn, cần biết
+  rõ để tự quyết**: chạy VI-Translate không sửa đổi, gọi qua subprocess từ 1
+  container riêng, cho 1 app cá nhân 2 người dùng (không phải dịch vụ công
+  khai) — rủi ro thực tế rất thấp, nhưng về mặt câu chữ AGPL, việc "cung cấp
+  phần mềm AGPL như 1 dịch vụ qua mạng" (kể cả nội bộ) vẫn có thể được hiểu
+  là phát sinh nghĩa vụ mở mã tương ứng. Chấp nhận rủi ro này là quyết định
+  có chủ đích cho quy mô dự án này (cá nhân, không thương mại hoá) — không
+  phải một khe hở bị bỏ sót.
 
-SSH vào VPS, vào đúng thư mục đã clone repo (đường dẫn thật tuỳ máy bạn, ví
-dụ dưới đây dùng `~/tech-books-backend`):
+Vẫn giữ nguyên **đường thủ công** (upload tay bản dịch qua form sửa sách) —
+không bị thay thế, phòng khi worker lỗi, chưa deploy container, hoặc cần
+dùng Handoff cho 1 cuốn cụ thể.
+
+---
+
+## 6. Cách dịch tay (dự phòng / sách cần chất lượng cao hơn)
+
+Vẫn hữu ích khi: sidecar chưa deploy xong, muốn dùng engine `handoff` (chính
+xác thuật ngữ hơn cho 1 cuốn quan trọng), hoặc sách cần OCR (bản scan).
+
+```bash
+# venv cần python3-venv trước (Ubuntu/Debian không có sẵn):
+python3 --version   # xem đúng số bản, vd 3.12.3
+sudo apt update && sudo apt install python3.12-venv   # đổi số theo bản của bạn
+
+git clone https://github.com/breslee1707/VI-Translate.git
+cd VI-Translate
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# chế độ Handoff — chính xác thuật ngữ hơn hẳn Google (ví dụ trong README của
+# họ: "conduction" bị Google dịch thành "dẫn điện", Handoff dịch đúng "dẫn nhiệt")
+.venv/bin/python scripts/translate_pdf.py INPUT.pdf --engine handoff --emit-segments segments.jsonl
+# nhờ 1 AI agent (vd. Claude Code, chạy ngay trong repo VI-Translate đã clone) dịch segments.jsonl -> translations.jsonl
+.venv/bin/python scripts/translate_pdf.py INPUT.pdf --engine handoff --segments translations.jsonl --output-dir OUT
+```
+
+Kết quả ở `OUT/INPUT-vi.pdf` — vào trang admin → **Sửa** cuốn sách đó → mục
+"Thêm chi tiết" → ô "Bản dịch tiếng Việt (PDF)" → chọn file đó → **Lưu**.
+Nếu cuốn này từng chạy qua luồng tự động và đã `done`, upload tay ở đây vẫn
+**thay thế được** bản dịch cũ — chỉ luồng tự động mới bị khoá không tự dịch
+lại, đường thủ công luôn mở.
+
+---
+
+## 7. Deploy lên VPS (Linux)
+
+### 7.1. Sidecar `pdf-translator` (chỉ cần làm 1 lần, hoặc khi đổi Dockerfile)
 
 ```bash
 ssh <user>@<vps-host>
-cd ~/tech-books-backend
+cd ~/tech-books-backend   # đường dẫn thật tuỳ máy bạn
 
-# lấy code mới
+docker compose build pdf-translator   # kéo VI-Translate + cài Python deps —
+                                       # có thể mất vài phút, tải kha khá (opencv,
+                                       # onnxruntime, model layout ~75MB...)
+docker compose up -d pdf-translator
+
+# kiểm tra đã sống chưa
+curl http://127.0.0.1:8787/health   # mong đợi: {"ok": true}
+docker compose logs pdf-translator --tail 30
+```
+
+### 7.2. `.env` của backend — thêm 2 dòng
+
+```bash
+PDF_TRANSLATOR_URL=http://127.0.0.1:8787
+PDF_TRANSLATOR_UPLOAD_PATH=/uploads
+```
+
+Không set `PDF_TRANSLATOR_URL` thì tính năng biên dịch tự động chỉ đơn giản
+**không khả dụng** — nút "Biên dịch" gọi API sẽ báo lỗi, còn lại mọi thứ khác
+của app không hề bị ảnh hưởng (giống cách `GEMINI_API_KEY`/`VAPID_*` để trống
+thì các tính năng liên quan tự tắt, không crash gì).
+
+### 7.3. Backend
+
+```bash
 git pull origin master
-
-# không có dependency mới cho tính năng này, nhưng chạy install cho chắc
-# (đề phòng lần deploy trước còn thiếu gì)
 npm install
-
-# build ra dist/
 npm run build
-
-# restart qua pm2 — --update-env bắt buộc nếu .env có gì thay đổi,
-# không thì bỏ qua cũng được, không hại gì khi thêm vào
-pm2 restart all --update-env
-
-# xem log để chắc app khởi động sạch, không lỗi TypeORM/migration
+pm2 restart all --update-env   # --update-env BẮT BUỘC lần này — có biến .env mới
 pm2 logs --lines 60
 ```
 
-Kiểm tra nhanh sau khi restart:
+Kiểm tra: log sạch, không lỗi `TypeOrmModule`. Cột mới tự tạo trong bảng
+`books` nhờ `synchronize: true` — không cần migration tay. Thử: thêm 1 cuốn
+sách nước ngoài, xác nhận biên dịch ngay khi được hỏi, đợi ít phút, xem chuông
+thông báo có báo "Đã biên dịch xong..." không.
 
-- Log không có dòng `ERROR` nào liên quan `TypeOrmModule`/`QueryFailedError`.
-- Cột mới (`translatedFileUrl`, `translatedFileOriginalName`,
-  `detectedLanguage`) tự được tạo trong bảng `books` nhờ `synchronize: true`
-  đang bật sẵn trong `src/config/typeorm.config.ts` — **không cần chạy
-  migration tay**, không cần đụng vào Postgres.
-- Test nhanh: vào trang admin, sửa 1 cuốn sách bất kỳ (không cần đổi gì),
-  bấm Lưu — nếu không lỗi, cột mới đã tồn tại và hoạt động bình thường.
+### 7.4. Frontend
 
-### Frontend
+Deploy lại 3 file `.html` như thường lệ — không có gì đổi ở quy trình.
 
-Deploy lại 3 file `index.html` / `diary.html` / `admin.html` theo đúng cách
-bạn vẫn làm (không có gì đổi ở quy trình deploy, chỉ là nội dung file mới).
+### Giới hạn cần biết
 
-### Không cần
-
-- Không cần cài `python3`/`pip` gì thêm trên VPS cho riêng tính năng này —
-  `python3` trên VPS (nếu có sẵn cho việc khác) không liên quan gì đến
-  backend NestJS cả.
-- Không cần mở port mới, không cần service/systemd mới.
-- Không cần sửa `.env` — không có biến môi trường mới nào cho 2 tính năng
-  này.
+- Xử lý **1 cuốn 1 lúc**, giả định backend chạy **1 instance duy nhất** (pm2
+  chế độ thường, không phải cluster mode nhiều worker). Nếu sau này chạy
+  cluster mode nhiều instance, cần thêm khoá phân tán cho
+  `TranslationWorkerService` — chưa cần thiết ở quy mô hiện tại.
+- `pdf-translator` build lần đầu tốn thời gian và băng thông (tải model +
+  cài đặt ML stack) — bù lại các lần sau chỉ `docker compose up -d` là chạy
+  ngay, không phải build lại trừ khi đổi Dockerfile.
+- Engine `google` không hỗ trợ sách cần OCR (bản scan) — nếu 1 cuốn báo lỗi
+  vì lý do này, dịch tay theo mục 6 với cờ OCR thay vì trông cậy vào luồng
+  tự động.

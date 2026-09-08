@@ -19,6 +19,7 @@ import { MAX_PDF_SIZE_BYTES } from '../../common/utils/storage';
 import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TranslationWorkerService } from '../translation-queue/translation-worker.service';
 import { detectBookLanguage } from './detect-language';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
@@ -55,6 +56,7 @@ export class BooksService {
     private readonly config: ConfigService,
     private readonly aiService: AiService,
     private readonly notificationsService: NotificationsService,
+    private readonly translationWorkerService: TranslationWorkerService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads');
   }
@@ -325,6 +327,43 @@ export class BooksService {
     await this.deleteLocalAsset(book.coverUrl);
     await this.deleteLocalAsset(book.translatedFileUrl ?? undefined);
     this.aiService.removeBookIndexInBackground(id);
+  }
+
+  // marks a book "please translate this" — TranslationWorkerService (a
+  // separate polling loop, see that module) picks up 'queued' books one
+  // at a time and does the actual work. Kept here rather than in that
+  // service because the validation is about the book's own state, which
+  // this service already owns.
+  async queueTranslation(id: string): Promise<Book> {
+    const book = await this.findOne(id);
+    if (book.detectedLanguage !== 'foreign') {
+      throw new BadRequestException(
+        'Chỉ biên dịch được sách được nhận diện là sách nước ngoài',
+      );
+    }
+    if (book.translatedFileUrl) {
+      // deliberate: an automated re-translate of a book that already has
+      // one is never triggered on its own — see docs/vi-translate.md.
+      // Replacing it is still possible, just has to be a deliberate
+      // manual upload through the edit form, not this endpoint.
+      throw new BadRequestException('Sách này đã có bản dịch rồi');
+    }
+    if (
+      book.translationJobStatus === 'queued' ||
+      book.translationJobStatus === 'processing'
+    ) {
+      throw new BadRequestException('Sách này đang được biên dịch rồi');
+    }
+    book.translationJobStatus = 'queued';
+    book.translationJobError = null;
+    const saved = await this.booksRepo.save(book);
+    // nudge the worker to check right now instead of waiting for its next
+    // @Cron tick (up to 15s away) — not awaited: the admin gets "queued"
+    // back immediately either way, this only affects how soon it actually
+    // starts, never the response itself. Same poll() the cron tick calls,
+    // so nothing behaves differently here — just runs sooner.
+    this.translationWorkerService.poll().catch(() => undefined);
+    return saved;
   }
 
   private resolveCoverUrl(
