@@ -17,13 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Defaults to the latest main — fine while this is new and still settling,
-# but once it's working reliably, pin this to a specific tag/commit (build
-# with --build-arg VI_TRANSLATE_REF=<sha>) so a change upstream can't alter
-# translation behavior out from under a working deploy without you choosing it.
+# Cloned from your own fork (github.com/DANG-PH/translate-vi-language), not
+# breslee1707/VI-Translate directly — a build here only ever changes when
+# YOU push to that fork, so `main` is already effectively pinned by
+# construction. `upstream` remote still points at the original repo for
+# reviewing/merging in updates deliberately when you actually want them.
 ARG VI_TRANSLATE_REF=main
 RUN git clone --depth 1 --branch ${VI_TRANSLATE_REF} \
-      https://github.com/breslee1707/VI-Translate.git vi-translate
+      https://github.com/DANG-PH/translate-vi-language.git vi-translate
 
 # base requirements only — OCR mode (requirements-ocr.txt) is deliberately
 # left out: it's for scanned books, which isn't the common case here, and

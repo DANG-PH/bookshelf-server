@@ -176,6 +176,23 @@ thêm sách mới và mỗi khi sửa sách kèm đổi file PDF gốc.
   không FastAPI/Flask) nhận `{inputPath, outputDir}`, chạy
   `scripts/translate_pdf.py` (engine mặc định `google`), trả về
   `{ok, outputPath}` hoặc `{ok:false, error}`.
+- **Fork riêng, không clone thẳng từ upstream** — `Dockerfile` clone từ
+  `github.com/DANG-PH/translate-vi-language` (fork riêng), không phải
+  `breslee1707/VI-Translate` trực tiếp. Lý do: build image ở đây tự động mỗi
+  khi cần (VPS, máy dev...) — nếu clone thẳng từ upstream, tác giả gốc đổi gì
+  ở nhánh `main` của họ là hành vi dịch của bạn đổi theo **ngay lần build kế
+  tiếp, không ai chọn**. Fork về tay mình thì `main` chỉ đổi khi chính bạn
+  `git push` lên đó — coi như đã pin sẵn theo mặc định, không cần nhớ ghim
+  commit SHA thủ công. Muốn lấy cập nhật từ tác giả gốc thì làm có chủ đích:
+  ```bash
+  cd VI-Translate   # bản clone cục bộ đã đổi remote (xem dưới)
+  git fetch upstream
+  git log main..upstream/main --oneline   # xem trước có gì mới
+  git merge upstream/main                 # đồng ý thì mới merge
+  git push origin main                    # rồi mới đẩy lên fork của mình
+  ```
+  Bản clone cục bộ ở máy dev đã đổi remote: `origin` → fork riêng (để push),
+  `upstream` → repo gốc của breslee1707 (chỉ để `fetch`, không push).
 - **Thư mục dùng chung** — `docker-compose.yml` bind-mount `UPLOAD_DIR` của
   backend vào `/uploads` trong container `pdf-translator`. 2 process thấy
   cùng 1 file vật lý qua 2 đường dẫn khác nhau (`PDF_TRANSLATOR_UPLOAD_PATH`
@@ -294,8 +311,9 @@ xác thuật ngữ hơn cho 1 cuốn quan trọng), hoặc sách cần OCR (bả
 python3 --version   # xem đúng số bản, vd 3.12.3
 sudo apt update && sudo apt install python3.12-venv   # đổi số theo bản của bạn
 
-git clone https://github.com/breslee1707/VI-Translate.git
+git clone https://github.com/DANG-PH/translate-vi-language.git VI-Translate
 cd VI-Translate
+git remote add upstream https://github.com/breslee1707/VI-Translate.git
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
