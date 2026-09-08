@@ -68,6 +68,12 @@ export class CatalogService {
             file: resolveAsset(b.fileUrl),
             cover: resolveAsset(b.coverUrl),
             translatedFile: resolveAsset(b.translatedFileUrl ?? undefined),
+            // only queued/processing is worth a reader ever seeing — a
+            // failed job is an admin-side "retry?" decision, not
+            // something to surface to whoever's just browsing
+            translating:
+              b.translationJobStatus === 'queued' ||
+              b.translationJobStatus === 'processing',
             readStatus: b.readStatus,
             startedAt: b.startedAt,
             finishedAt: b.finishedAt,
