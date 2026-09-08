@@ -9,6 +9,16 @@ nào là sách nước ngoài, cuốn nào đã là tiếng Việt sẵn rồi.
 > Toàn bộ tài liệu này viết cho môi trường **Linux** — cả máy dev cá nhân lẫn
 > VPS đều là Linux, không có phần Windows/macOS ở đây.
 
+> [!IMPORTANT]
+> **Ranh giới tự động hoá — đọc trước khi bối rối**: chỉ có **nhận diện
+> ngôn ngữ** (mục 1) là tự động, chạy ngay trong backend lúc thêm sách,
+> không cần làm gì thêm. Việc **dịch file PDF ra bản tiếng Việt thật sự**
+> (mục 2-3) **không tự động** — vẫn phải chạy tay ở máy cá nhân rồi upload
+> lại. Đây là 2 việc khác nhau: 1 cái là "biết cuốn nào cần dịch" (tự động),
+> 1 cái là "thực sự tạo ra bản dịch" (thủ công, có chủ đích — xem mục 5 vì
+> sao). Nhận diện tự động giúp *biết* cuốn nào đáng để dịch, không có nghĩa
+> là *tự dịch luôn*.
+
 ## Mục lục
 
 1. [Tự động nhận diện ngôn ngữ](#1-tự-động-nhận-diện-ngôn-ngữ)
@@ -99,6 +109,21 @@ Translate rồi mất sạch bố cục).
 
 ### Cài đặt (Linux)
 
+Trên Ubuntu/Debian, `python3-venv` thường **không có sẵn** — thiếu gói này
+thì `python3 -m venv` báo lỗi `ensurepip is not available`. Cài trước:
+
+```bash
+python3 --version   # ví dụ: Python 3.12.3 — nhớ số bản, dùng ở dòng dưới
+sudo apt update
+sudo apt install python3.12-venv   # đổi "3.12" theo đúng version python3 --version vừa báo
+```
+
+(Không chắc số bản, hoặc không dùng Ubuntu/Debian: `sudo apt install
+python3-venv` trước, thiếu thì apt sẽ tự gợi ý đúng tên gói version-cụ-thể
+cần cài như thông báo lỗi ở trên.)
+
+Sau đó mới clone và tạo venv:
+
 ```bash
 git clone https://github.com/breslee1707/VI-Translate.git
 cd VI-Translate
@@ -131,15 +156,26 @@ Kết quả nằm ở `OUT/INPUT-vi.pdf`.
 
 ## 3. Quy trình thêm bản dịch cho 1 cuốn sách
 
-1. Thêm sách vào thư viện như bình thường qua trang admin — hệ thống tự nhận
-   diện ngôn ngữ ngay lúc này (xem mục 1).
-2. Nếu sách được gắn nhãn **"Sách nước ngoài"**, và muốn có bản dịch: dịch
-   file PDF gốc bằng VI-Translate như mục 2.
-3. Vào trang admin → bấm **Sửa** trên cuốn sách đó → mở mục **"Thêm chi
-   tiết"** → ở ô **"Bản dịch tiếng Việt (PDF)"**, chọn file vừa dịch được →
-   **Lưu**.
-4. Xong. Ở trang đọc sách, cuốn đó sẽ hiện thêm dòng **"Đọc bản dịch tiếng
-   Việt"** ngay dưới hàng trạng thái đọc trên thẻ sách.
+| Bước | Ai/cái gì làm |
+| --- | --- |
+| 1 | **Tự động** — backend làm |
+| 2 | **Thủ công** — bạn làm, ở máy cá nhân |
+| 3 | **Thủ công** — bạn làm, qua trang admin |
+| 4 | Tự động (chỉ là hiển thị) |
+
+1. Thêm sách vào thư viện như bình thường qua trang admin. **Không cần làm
+   gì thêm** — hệ thống tự nhận diện ngôn ngữ ngay lúc này (xem mục 1), tự
+   gắn nhãn "Tiếng Việt" hoặc "Sách nước ngoài" trong danh sách sách.
+2. Xem danh sách sách ở admin, cuốn nào gắn nhãn **"Sách nước ngoài"** mà
+   muốn có bản dịch thì **tự chạy VI-Translate ở máy cá nhân** (mục 2) —
+   bước này bắt buộc phải làm tay, xem [mục 5](#5-vì-sao-không-dịch-ngay-trong-backend)
+   để hiểu vì sao không thể tự động hoá được bước này.
+3. Cầm file PDF vừa dịch xong ở bước 2, vào trang admin → bấm **Sửa** trên
+   cuốn sách đó → mở mục **"Thêm chi tiết"** → ở ô **"Bản dịch tiếng Việt
+   (PDF)"**, chọn file đó → **Lưu**.
+4. Xong. Ở trang đọc sách, cuốn đó tự hiện thêm dòng **"Đọc bản dịch tiếng
+   Việt"** ngay dưới hàng trạng thái đọc trên thẻ sách — không cần làm gì
+   thêm ở bước này.
 
 ---
 
