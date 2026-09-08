@@ -250,11 +250,17 @@ export class BooksService {
     const oldCoverUrl = book.coverUrl;
     const resolvedTranslatedFile = this.resolveTranslatedFile(files);
     const oldTranslatedFileUrl = book.translatedFileUrl;
-    // only a genuinely new PDF needs re-checking — an edit that leaves
-    // the file untouched can't have changed what language it's in
+    // a genuinely new PDF needs re-checking — an edit that leaves the file
+    // untouched can't have changed what language it's in. But a book added
+    // *before* language detection existed (or whose first attempt came back
+    // null — a scanned page, say) has never been checked at all: retry
+    // against its already-stored file so just opening "Sửa" and hitting
+    // "Lưu" — no re-upload needed — is enough to backfill it
     const detectedLanguage = resolvedFile
       ? await detectBookLanguage(join(this.uploadDir, resolvedFile.fileUrl))
-      : book.detectedLanguage;
+      : book.detectedLanguage === null
+        ? await detectBookLanguage(join(this.uploadDir, book.fileUrl))
+        : book.detectedLanguage;
 
     Object.assign(book, {
       ...dto,

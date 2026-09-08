@@ -113,7 +113,12 @@ const isVietnamese =
 Lấy mẫu 5 trang đầu qua `pdf-parse` (đã có sẵn trong `package.json`, dùng cho
 RAG chatbot — không thêm dependency nào). `null` (không đoán được — PDF quét
 ảnh không lớp chữ, mã hoá...) thì để trống, không đoán bừa. Tính lại mỗi khi
-thêm sách mới và mỗi khi sửa sách kèm đổi file PDF gốc.
+thêm sách mới, mỗi khi sửa sách kèm đổi file PDF gốc — **và mỗi khi sửa 1
+cuốn mà `detectedLanguage` đang là `null`**, dùng thẳng file đang lưu sẵn, dù
+không đổi file. Điểm cuối này là để **backfill** những cuốn thêm từ trước khi
+tính năng này tồn tại (chưa từng được nhận diện lần nào): chỉ cần vào trang
+admin → **Sửa** cuốn đó → **Lưu** ngay (không cần đổi gì, không cần upload
+lại PDF) là tự chạy nhận diện — không phải sửa DB tay.
 
 ---
 
