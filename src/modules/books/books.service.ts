@@ -28,6 +28,7 @@ import { CreateBookQuoteDto } from './dto/create-book-quote.dto';
 export interface UploadedBookFiles {
   file?: Express.Multer.File[];
   cover?: Express.Multer.File[];
+  translatedFile?: Express.Multer.File[];
 }
 
 interface ResolvedBookFile {
@@ -197,6 +198,7 @@ export class BooksService {
 
     await this.categoriesService.findOne(dto.categoryId);
 
+    const resolvedTranslatedFile = this.resolveTranslatedFile(files);
     const book = this.booksRepo.create({
       categoryId: dto.categoryId,
       num: dto.num ?? (await this.nextNum(dto.categoryId)),
@@ -209,6 +211,9 @@ export class BooksService {
       fileUrl: resolvedFile.fileUrl,
       fileOriginalName: resolvedFile.fileOriginalName,
       coverUrl: this.resolveCoverUrl(files, dto),
+      translatedFileUrl: resolvedTranslatedFile?.fileUrl ?? null,
+      translatedFileOriginalName:
+        resolvedTranslatedFile?.fileOriginalName ?? null,
     });
 
     const saved = await this.booksRepo.save(book);
@@ -236,6 +241,8 @@ export class BooksService {
     const oldFileUrl = book.fileUrl;
     const newCoverUrl = this.resolveCoverUrl(files, dto);
     const oldCoverUrl = book.coverUrl;
+    const resolvedTranslatedFile = this.resolveTranslatedFile(files);
+    const oldTranslatedFileUrl = book.translatedFileUrl;
 
     Object.assign(book, {
       ...dto,
@@ -244,6 +251,12 @@ export class BooksService {
         ? resolvedFile.fileOriginalName
         : book.fileOriginalName,
       coverUrl: newCoverUrl ?? book.coverUrl,
+      translatedFileUrl: resolvedTranslatedFile
+        ? resolvedTranslatedFile.fileUrl
+        : book.translatedFileUrl,
+      translatedFileOriginalName: resolvedTranslatedFile
+        ? resolvedTranslatedFile.fileOriginalName
+        : book.translatedFileOriginalName,
     });
 
     const saved = await this.booksRepo.save(book);
@@ -251,6 +264,9 @@ export class BooksService {
     if (resolvedFile && oldFileUrl) await this.deleteLocalAsset(oldFileUrl);
     if (newCoverUrl && oldCoverUrl && oldCoverUrl !== newCoverUrl) {
       await this.deleteLocalAsset(oldCoverUrl);
+    }
+    if (resolvedTranslatedFile && oldTranslatedFileUrl) {
+      await this.deleteLocalAsset(oldTranslatedFileUrl);
     }
 
     // only a changed PDF needs re-embedding; a title-only edit just
@@ -296,6 +312,7 @@ export class BooksService {
     await this.booksRepo.remove(book);
     await this.deleteLocalAsset(book.fileUrl);
     await this.deleteLocalAsset(book.coverUrl);
+    await this.deleteLocalAsset(book.translatedFileUrl ?? undefined);
     this.aiService.removeBookIndexInBackground(id);
   }
 
@@ -307,6 +324,20 @@ export class BooksService {
     if (coverFile) return `covers/${coverFile.filename}`;
     if (dto.coverUrl) return dto.coverUrl;
     return undefined;
+  }
+
+  // upload-only, no paste-a-link alternative (unlike the original PDF's
+  // pdfUrl) — a translated PDF is always produced elsewhere first (see
+  // docs/vi-translate.md), never fetched from an arbitrary URL server-side
+  private resolveTranslatedFile(
+    files: UploadedBookFiles,
+  ): ResolvedBookFile | undefined {
+    const translatedFile = files.translatedFile?.[0];
+    if (!translatedFile) return undefined;
+    return {
+      fileUrl: `books/${translatedFile.filename}`,
+      fileOriginalName: translatedFile.originalname,
+    };
   }
 
   // uploaded file wins if both are somehow present; otherwise fetch the

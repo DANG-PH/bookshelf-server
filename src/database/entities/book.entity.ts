@@ -51,6 +51,16 @@ export class Book {
   @Column({ nullable: true })
   fileOriginalName: string;
 
+  // optional Vietnamese translation of the same PDF, uploaded separately
+  // (produced outside this app — see docs/vi-translate.md) — the reader
+  // gets a second "Đọc bản dịch" link on the card when this is set,
+  // never a requirement, just an extra alongside the original file
+  @Column({ nullable: true })
+  translatedFileUrl: string | null;
+
+  @Column({ nullable: true })
+  translatedFileOriginalName: string | null;
+
   // either a path served through GET /api/files/covers/:filename,
   // or an external http(s) URL — resolved as-is by the frontend
   @Column({ nullable: true })

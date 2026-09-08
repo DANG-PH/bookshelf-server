@@ -28,6 +28,7 @@ import { CreateBookQuoteDto } from './dto/create-book-quote.dto';
 const UPLOAD_FIELDS = [
   { name: 'file', maxCount: 1 },
   { name: 'cover', maxCount: 1 },
+  { name: 'translatedFile', maxCount: 1 },
 ];
 
 @ApiTags('books')

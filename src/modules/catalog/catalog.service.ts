@@ -67,6 +67,7 @@ export class CatalogService {
             tags: b.tags,
             file: resolveAsset(b.fileUrl),
             cover: resolveAsset(b.coverUrl),
+            translatedFile: resolveAsset(b.translatedFileUrl ?? undefined),
             readStatus: b.readStatus,
             startedAt: b.startedAt,
             finishedAt: b.finishedAt,
