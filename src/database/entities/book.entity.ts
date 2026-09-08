@@ -55,10 +55,16 @@ export class Book {
   // (produced outside this app — see docs/vi-translate.md) — the reader
   // gets a second "Đọc bản dịch" link on the card when this is set,
   // never a requirement, just an extra alongside the original file
-  @Column({ nullable: true })
+  // explicit type: 'varchar' — a `string | null` TS union reflects as
+  // "Object" in emitDecoratorMetadata (unions can't be represented as a
+  // single runtime type), and TypeORM infers the column type from exactly
+  // that metadata when none is given, so this is required, not decorative.
+  // Confirmed the hard way: without it, Postgres rejects it with
+  // "Data type Object ... is not supported" on every app start.
+  @Column({ type: 'varchar', nullable: true })
   translatedFileUrl: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   translatedFileOriginalName: string | null;
 
   // auto-detected from the book's own PDF text the moment it's added
