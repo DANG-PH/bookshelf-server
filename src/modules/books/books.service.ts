@@ -19,6 +19,7 @@ import { MAX_PDF_SIZE_BYTES } from '../../common/utils/storage';
 import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { detectBookLanguage } from './detect-language';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { UpdateBookStatusDto } from './dto/update-book-status.dto';
@@ -199,6 +200,9 @@ export class BooksService {
     await this.categoriesService.findOne(dto.categoryId);
 
     const resolvedTranslatedFile = this.resolveTranslatedFile(files);
+    const detectedLanguage = await detectBookLanguage(
+      join(this.uploadDir, resolvedFile.fileUrl),
+    );
     const book = this.booksRepo.create({
       categoryId: dto.categoryId,
       num: dto.num ?? (await this.nextNum(dto.categoryId)),
@@ -214,6 +218,7 @@ export class BooksService {
       translatedFileUrl: resolvedTranslatedFile?.fileUrl ?? null,
       translatedFileOriginalName:
         resolvedTranslatedFile?.fileOriginalName ?? null,
+      detectedLanguage,
     });
 
     const saved = await this.booksRepo.save(book);
@@ -243,6 +248,11 @@ export class BooksService {
     const oldCoverUrl = book.coverUrl;
     const resolvedTranslatedFile = this.resolveTranslatedFile(files);
     const oldTranslatedFileUrl = book.translatedFileUrl;
+    // only a genuinely new PDF needs re-checking — an edit that leaves
+    // the file untouched can't have changed what language it's in
+    const detectedLanguage = resolvedFile
+      ? await detectBookLanguage(join(this.uploadDir, resolvedFile.fileUrl))
+      : book.detectedLanguage;
 
     Object.assign(book, {
       ...dto,
@@ -257,6 +267,7 @@ export class BooksService {
       translatedFileOriginalName: resolvedTranslatedFile
         ? resolvedTranslatedFile.fileOriginalName
         : book.translatedFileOriginalName,
+      detectedLanguage,
     });
 
     const saved = await this.booksRepo.save(book);

@@ -61,6 +61,14 @@ export class Book {
   @Column({ nullable: true })
   translatedFileOriginalName: string | null;
 
+  // auto-detected from the book's own PDF text the moment it's added
+  // (see BooksService/detect-language.ts) — 'vi' | 'foreign' | null
+  // (null = couldn't tell, e.g. a scanned PDF with no text layer).
+  // Exists so "does this book even need a translation" never depends on
+  // someone remembering to judge it by hand — see docs/vi-translate.md
+  @Column({ type: 'varchar', nullable: true })
+  detectedLanguage: 'vi' | 'foreign' | null;
+
   // either a path served through GET /api/files/covers/:filename,
   // or an external http(s) URL — resolved as-is by the frontend
   @Column({ nullable: true })
