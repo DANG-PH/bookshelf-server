@@ -132,7 +132,7 @@ export class TranslationWorkerService {
         .create(`Đã biên dịch xong "${book.title}" sang tiếng Việt.`)
         .catch(() => undefined);
     } catch (err) {
-      const message = String((err as Error)?.message ?? err).slice(0, 2000);
+      const message = this.describeError(err).slice(0, 2000);
       book.translationJobStatus = 'failed';
       book.translationJobError = message;
       await this.booksRepo.save(book);
@@ -145,5 +145,31 @@ export class TranslationWorkerService {
         .rm(hostJobDir, { recursive: true, force: true })
         .catch(() => undefined);
     }
+  }
+
+  // Node's fetch() throws a generic "fetch failed" for any connection-level
+  // problem (sidecar down, wrong PDF_TRANSLATOR_URL, refused connection...)
+  // — the actual reason lives on err.cause, which .message alone drops on
+  // the floor. Without this, every network failure looked identical and
+  // undiagnosable from the admin panel's error text alone.
+  private describeError(err: unknown): string {
+    if (!(err instanceof Error)) return String(err);
+    const cause = (err as Error & { cause?: unknown }).cause;
+    let causeText: string | undefined;
+    if (cause instanceof Error) {
+      causeText = cause.message;
+    } else if (typeof cause === 'string' || typeof cause === 'number') {
+      causeText = String(cause);
+    } else if (cause !== undefined) {
+      // an unknown-shaped cause (plain object, etc.) — JSON beats
+      // Object's default toString() ("[object Object]"), and never
+      // throws even on something circular/exotic
+      try {
+        causeText = JSON.stringify(cause);
+      } catch {
+        causeText = undefined;
+      }
+    }
+    return causeText ? `${err.message}: ${causeText}` : err.message;
   }
 }
