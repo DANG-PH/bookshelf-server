@@ -20,6 +20,7 @@ one subprocess call; a dependency here would just be one more thing that
 can drift out of sync with whatever's actually pinned in requirements.txt.
 """
 import json
+import os
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,7 +34,7 @@ PORT = 8787
 # see VI-Translate's own README benchmark (8 pages: 27-48s depending on
 # thread count) — but this is a hard ceiling against something hanging
 # forever, not the expected case
-TIMEOUT_SECONDS = 30 * 60
+TIMEOUT_SECONDS = int(os.environ.get("PDF_TRANSLATOR_TIMEOUT_SECONDS", 30 * 60))
 
 
 class Handler(BaseHTTPRequestHandler):

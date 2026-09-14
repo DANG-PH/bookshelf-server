@@ -23,16 +23,11 @@ interface TranslateResponse {
 // takes (minutes), so this only needs to be "soon", not instant
 const POLL_CRON = '*/15 * * * * *';
 
-// must stay ABOVE pdf-translator/server.py's own TIMEOUT_SECONDS (30 min)
-// so the sidecar's own timeout fires first and hands back a real error —
-// found the hard way: Node's global fetch() (undici) has a *default*
-// headers-timeout of 5 minutes with no simple way to raise it without
-// pulling in `undici` as its own dependency just for that, so this uses
-// plain http/https.request() instead, which has no such ceiling of its
-// own — a translation that's still running at the 5-minute mark used to
-// come back as "fetch failed: Headers Timeout Error" even though the
-// sidecar was still working the whole time
-const TRANSLATE_TIMEOUT_MS = 31 * 60 * 1000;
+// TRANSLATE timeout is computed at runtime from the sidecar's server
+// timeout (PDF_TRANSLATOR_TIMEOUT_SECONDS) with a small buffer so the
+// sidecar's own timeout fires first and returns a clear error. See the
+// comment above about undici/fetch headers-timeout — using plain
+// http/https.request() avoids that ceiling.
 
 // single global concurrency, on purpose — the pdf-translator sidecar gets
 // one CPU's worth of budget on a small VPS (see pdf-translator/server.py),
@@ -44,6 +39,7 @@ export class TranslationWorkerService {
   private readonly translatorUrl?: string;
   private readonly translatorUploadPath: string;
   private readonly uploadDir: string;
+  private translateTimeoutMs: number;
   // guards against a poll tick starting a second run while the previous
   // one's HTTP call (which can take many minutes) is still in flight —
   // the DB-side 'processing' check below covers the same case across a
@@ -62,6 +58,11 @@ export class TranslationWorkerService {
       '/uploads',
     );
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads');
+    const serverTimeoutSec = Number(
+      this.config.get<number>('PDF_TRANSLATOR_TIMEOUT_SECONDS', 30 * 60),
+    );
+    // add a small buffer so the Python sidecar times out first
+    this.translateTimeoutMs = (serverTimeoutSec + 60) * 1000;
   }
 
   @Cron(POLL_CRON)
@@ -111,7 +112,7 @@ export class TranslationWorkerService {
       const { status, data } = await this.postJson(
         `${this.translatorUrl}/translate`,
         { inputPath: containerInputPath, outputDir: containerJobDir },
-        TRANSLATE_TIMEOUT_MS,
+        this.translateTimeoutMs,
       );
       if (status < 200 || status >= 300 || !data.ok || !data.outputPath) {
         throw new Error(data.error || `HTTP ${status}`);
