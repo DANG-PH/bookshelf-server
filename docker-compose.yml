@@ -20,6 +20,8 @@ services:
     restart: unless-stopped
     ports:
       - '127.0.0.1:8787:8787'
+    environment:
+      - PDF_TRANSLATOR_TIMEOUT_SECONDS=7200
     volumes:
       # must be the SAME folder the backend's own UPLOAD_DIR points at —
       # this is how the two processes hand a PDF back and forth without a
