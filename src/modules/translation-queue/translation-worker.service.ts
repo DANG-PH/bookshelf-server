@@ -16,6 +16,13 @@ interface TranslateResponse {
   ok?: boolean;
   outputPath?: string;
   error?: string;
+  // only present on a timeout response — the last bit of what
+  // translate_pdf.py had printed before the sidecar killed it (see
+  // pdf-translator/server.py's _pump()). Worth folding into the error
+  // shown in admin.html: it's the difference between "no idea what
+  // happened" and actually seeing how far it got / what it was stuck on.
+  stdoutTail?: string;
+  stderrTail?: string;
 }
 
 // how far behind "book got queued" a poll tick can lag, worst case — the
@@ -119,7 +126,12 @@ export class TranslationWorkerService {
         this.translateTimeoutMs,
       );
       if (status < 200 || status >= 300 || !data.ok || !data.outputPath) {
-        throw new Error(data.error || `HTTP ${status}`);
+        const parts = [data.error || `HTTP ${status}`];
+        // stderr is where translate_pdf.py's real failures/tracebacks
+        // land; stdout only as a fallback if stderr came back empty
+        if (data.stderrTail) parts.push(`[stderr] ${data.stderrTail}`);
+        else if (data.stdoutTail) parts.push(`[stdout] ${data.stdoutTail}`);
+        throw new Error(parts.join('\n'));
       }
 
       // data.outputPath is the *container* path — same bytes are already
