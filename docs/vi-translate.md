@@ -474,7 +474,31 @@ Deploy lại 3 file `.html` như thường lệ — không có gì đổi ở qu
       print('LOI:', type(e).__name__, e)
   "
   ```
-  Không thấy gì sau ~30-60s, hoặc báo lỗi kết nối — Google đang chặn/không
-  gọi được từ VPS này, engine `google` không dùng được ở đây bất kể chỉnh
-  timeout bao lâu, cần đổi hướng khác (dịch tay bằng Handoff ở máy khác,
-  hoặc dùng proxy/VPN cho outbound request).
+  Không thấy gì sau ~30-60s, hoặc báo lỗi kết nối — Google đang chặn.
+
+  **Kết quả kiểm tra thật (đã chạy)**: cả `translate.google.com/m` (engine
+  `google` đang dùng) lẫn endpoint thay thế `translate.googleapis.com
+  ?client=gtx` đều bị Google trả về **HTTP 429 kèm trang CAPTCHA ngay lập
+  tức, 100% số lần thử**, kể cả gắn header trình duyệt chuẩn — không phải
+  "thỉnh thoảng chậm", mà chặn thẳng. Đây là hành vi phổ biến của Google
+  với IP kiểu server/datacenter/VPS cho các endpoint dịch không chính thức
+  này, không riêng gì VPS của dự án.
+
+  **Đã vá trực tiếp vào fork VI-Translate** (`DANG-PH/translate-vi-language`,
+  file `pdf2zh/translator.py`): `GoogleTranslator` giờ tự động rơi xuống
+  **MyMemory** (dịch vụ dịch miễn phí khác, không cần key, đã xác nhận gọi
+  được bình thường từ cùng mạng bị Google chặn) ngay khi Google thất bại
+  lần đầu — không retry 8 lần vào 1 endpoint đã chết hẳn (tốn thời gian vô
+  ích), mà chuyển hẳn sang MyMemory cho toàn bộ phần còn lại của lượt chạy
+  đó. Cùng ý tưởng "circuit breaker + fallback" đã dùng thành công ở 1 dự
+  án khác của chính bạn (`hanni-server`'s `translate.util.ts`).
+
+  Đánh đổi cần biết: **chất lượng MyMemory không đều bằng Google** — nó là
+  dịch vụ "translation memory" (khớp bản dịch có sẵn trong kho dữ liệu),
+  câu quen thuộc/phổ biến đôi khi trả về gần như nguyên văn tiếng Anh thay
+  vì dịch máy thật. Nhưng ít nhất **luôn chạy được**, không còn treo/timeout
+  vô thời hạn như trước.
+
+  `docker-compose.yml`'s `ARG VI_TRANSLATE_REF=main` đã trỏ sẵn tới fork
+  này, nên chỉ cần `docker compose build pdf-translator` lại là code mới
+  (bản vá MyMemory) tự động được kéo vào, không cần sửa gì thêm.
