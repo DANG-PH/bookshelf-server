@@ -30,11 +30,17 @@ VI_TRANSLATE_DIR = Path(__file__).resolve().parent / "vi-translate"
 SCRIPT = VI_TRANSLATE_DIR / "scripts" / "translate_pdf.py"
 PORT = 8787
 
-# a book-length PDF through the "google" engine is minutes, not seconds —
-# see VI-Translate's own README benchmark (8 pages: 27-48s depending on
-# thread count) — but this is a hard ceiling against something hanging
-# forever, not the expected case
-TIMEOUT_SECONDS = int(os.environ.get("PDF_TRANSLATOR_TIMEOUT_SECONDS", 30 * 60))
+# 30 minutes turned out nowhere near enough for a real book — pdf2zh's own
+# converter.py says it plainly: "A book is thousands of segments over tens
+# of minutes" is the NORMAL case, before even counting Google throttling.
+# When Google does throttle, each segment retries up to 8 times with
+# exponential backoff (max 60s/attempt — see converter.py's
+# request_translation), so a throttled run can run well past an hour.
+# 3 hours (10800s) default, overridable via .env — keep it in sync with
+# docker-compose.yml's PDF_TRANSLATOR_TIMEOUT_SECONDS and the backend's
+# own copy of the same variable (src/config/env.validation.ts), all three
+# meant to be the exact same number
+TIMEOUT_SECONDS = int(os.environ.get("PDF_TRANSLATOR_TIMEOUT_SECONDS", 3 * 60 * 60))
 
 
 class Handler(BaseHTTPRequestHandler):

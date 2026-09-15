@@ -58,8 +58,12 @@ export class TranslationWorkerService {
       '/uploads',
     );
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads');
+    // default must match pdf-translator/server.py's own default and
+    // docker-compose.yml's PDF_TRANSLATOR_TIMEOUT_SECONDS exactly — all
+    // three read the same .env variable, so setting it once anywhere
+    // that matters is enough; see the comment in server.py for why 3h
     const serverTimeoutSec = Number(
-      this.config.get<number>('PDF_TRANSLATOR_TIMEOUT_SECONDS', 30 * 60),
+      this.config.get<number>('PDF_TRANSLATOR_TIMEOUT_SECONDS', 3 * 60 * 60),
     );
     // add a small buffer so the Python sidecar times out first
     this.translateTimeoutMs = (serverTimeoutSec + 60) * 1000;

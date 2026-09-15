@@ -128,6 +128,19 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PDF_TRANSLATOR_UPLOAD_PATH: string = '/uploads';
+
+  // How long a single book is allowed to take through the pdf-translator
+  // sidecar before it's given up on as 'failed'. Must be set to the exact
+  // same value docker-compose.yml passes the container as its own
+  // PDF_TRANSLATOR_TIMEOUT_SECONDS (both read this same .env variable) —
+  // this process and the sidecar disagreeing about the ceiling is exactly
+  // what caused translations to fail at 1800s/1860s despite still running
+  // fine on the Python side. Default 3h; see pdf-translator/server.py for
+  // why real books can genuinely need that long.
+  @IsOptional()
+  @IsInt()
+  @Min(60)
+  PDF_TRANSLATOR_TIMEOUT_SECONDS: number = 3 * 60 * 60;
 }
 
 export function validate(config: Record<string, unknown>) {

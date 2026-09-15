@@ -355,17 +355,24 @@ curl http://127.0.0.1:8787/health   # mong đợi: {"ok": true}
 docker compose logs pdf-translator --tail 30
 ```
 
-### 7.2. `.env` của backend — thêm 2 dòng
+### 7.2. `.env` của backend — thêm các dòng sau
 
 ```bash
 PDF_TRANSLATOR_URL=http://127.0.0.1:8787
 PDF_TRANSLATOR_UPLOAD_PATH=/uploads
+# tuỳ chọn — mặc định đã là 10800 (3 giờ) nếu bỏ trống; chỉnh khi cần
+PDF_TRANSLATOR_TIMEOUT_SECONDS=10800
 ```
 
 Không set `PDF_TRANSLATOR_URL` thì tính năng biên dịch tự động chỉ đơn giản
 **không khả dụng** — nút "Biên dịch" gọi API sẽ báo lỗi, còn lại mọi thứ khác
 của app không hề bị ảnh hưởng (giống cách `GEMINI_API_KEY`/`VAPID_*` để trống
 thì các tính năng liên quan tự tắt, không crash gì).
+
+`PDF_TRANSLATOR_TIMEOUT_SECONDS` **cùng 1 file `.env` này** quyết định cả
+2 phía (`docker-compose.yml` và backend Node đều đọc đúng biến này, đúng
+file này) — chỉ cần sửa ở đây, không phải sửa 2 chỗ. Gặp sách siêu dài vẫn
+timeout ở 10800s thì tăng số này lên, không cần sửa code.
 
 ### 7.3. Backend
 
@@ -406,13 +413,29 @@ Deploy lại 3 file `.html` như thường lệ — không có gì đổi ở qu
   qua. Đã sửa để lấy luôn `.cause` vào thông báo lỗi hiện trong admin.
 - **`Biên dịch lỗi: fetch failed: Headers Timeout Error`** — `fetch()` của
   Node (chạy trên undici) có **timeout mặc định 5 phút** chờ header phản
-  hồi, trong khi sách dài dịch xong có thể mất lâu hơn thế, và
-  `server.py` phía Python cho phép tới 30 phút. Kết quả: job vẫn đang chạy
-  bình thường bên Python nhưng Node đã bỏ cuộc trước, báo `failed` oan. Đã
-  đổi từ `fetch()` sang `http`/`https.request()` thuần (không phụ thuộc
-  thêm gói nào), đặt timeout 31 phút — dài hơn timeout 30 phút của
-  `server.py` 1 chút để phía Python luôn là bên timeout trước và trả lỗi
-  có cấu trúc, thay vì Node đoán mò.
+  hồi, ngắn hơn nhiều so với ceiling phía Python. Đã đổi từ `fetch()` sang
+  `http`/`https.request()` thuần (không phụ thuộc thêm gói nào) — không có
+  ceiling 5 phút mặc định đó nữa.
+- **Vẫn lỗi timeout, đúng ở giây thứ 1800 hoặc 1860, dù đã sửa 2 lỗi trên**
+  — 2 nguyên nhân cộng lại:
+  1. **30 phút chưa bao giờ đủ cho sách thật.** Comment ngay trong code gốc
+     của VI-Translate (`pdf2zh/converter.py`) nói thẳng: *"A book is
+     thousands of segments over tens of minutes"* là **bình thường**, chưa
+     kể nếu Google chặn (throttle) thì mỗi đoạn bị retry tới 8 lần, mỗi lần
+     backoff tới 60s — 1 cuốn bị throttle nhiều có thể mất hơn 1 giờ, không
+     phải bug, đúng thiết kế của chính công cụ.
+  2. **2 nơi set cùng biến `PDF_TRANSLATOR_TIMEOUT_SECONDS` không đồng
+     bộ**: `docker-compose.yml` hardcode 1 giá trị cho container Python,
+     còn backend Node đọc `.env` **riêng** của nó — chưa từng được set nên
+     rơi về mặc định cũ (1800s), một bên đã nâng lên nhưng bên kia thì
+     chưa, bên nào ngắn hơn thắng.
+
+  Sửa cả 2: nâng mặc định lên **3 giờ** (10800s) ở cả 3 chỗ
+  (`pdf-translator/server.py`, `TranslationWorkerService`,
+  `docker-compose.yml`), và `docker-compose.yml` giờ đọc
+  `${PDF_TRANSLATOR_TIMEOUT_SECONDS:-10800}` từ đúng `.env` mà backend
+  cũng đọc — **1 biến, 1 chỗ set, cả 2 bên luôn khớp nhau**, không còn
+  cảnh chỉnh 1 nơi tưởng xong nhưng nơi kia không hay biết.
 - **`curl http://127.0.0.1:8787/health` bị treo trong lúc có job đang
   chạy** — `server.py` trước đó dùng `HTTPServer` (xử lý đúng 1 kết nối 1
   lúc, không phải chỉ 1 `/translate` 1 lúc mà là **toàn bộ server**), nên 1
