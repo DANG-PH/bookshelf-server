@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -41,6 +42,19 @@ PORT = 8787
 # own copy of the same variable (src/config/env.validation.ts), all three
 # meant to be the exact same number
 TIMEOUT_SECONDS = int(os.environ.get("PDF_TRANSLATOR_TIMEOUT_SECONDS", 3 * 60 * 60))
+
+
+# reads one pipe line by line, both printing it to *this* process's own
+# stdout (so `docker compose logs -f pdf-translator` shows it live — a
+# translate_pdf.py that was still legitimately working looked identical
+# to one silently hung before this, since subprocess.run(capture_output=
+# True) buffers everything until the process exits or times out) and
+# appending it to `into` for the final HTTP response's error text
+def _pump(pipe, prefix: str, into: list) -> None:
+    for line in iter(pipe.readline, ""):
+        into.append(line)
+        print(f"[{prefix}] {line.rstrip()}", flush=True)
+    pipe.close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -87,33 +101,67 @@ class Handler(BaseHTTPRequestHandler):
         # deliberate: keeps this service fully self-contained with no LLM
         # API key of its own. See docs/vi-translate.md for why (Gemini's
         # quota/budget in this app stays reserved for the chatbot).
+        #
+        # Popen + manual pipe-pumping instead of subprocess.run(
+        # capture_output=True) — see _pump()'s comment: the old version
+        # gave zero visibility into whether a long-running job was still
+        # actually progressing or had quietly wedged.
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(SCRIPT),
+                input_path,
+                "--output-dir",
+                output_dir,
+                "--overwrite",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        stdout_lines: list = []
+        stderr_lines: list = []
+        out_thread = threading.Thread(
+            target=_pump, args=(proc.stdout, "translate", stdout_lines), daemon=True
+        )
+        err_thread = threading.Thread(
+            target=_pump, args=(proc.stderr, "translate:err", stderr_lines), daemon=True
+        )
+        out_thread.start()
+        err_thread.start()
+
         try:
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    input_path,
-                    "--output-dir",
-                    output_dir,
-                    "--overwrite",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=TIMEOUT_SECONDS,
-            )
+            returncode = proc.wait(timeout=TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            out_thread.join(timeout=5)
+            err_thread.join(timeout=5)
             self._send_json(
                 504,
-                {"ok": False, "error": f"translate_pdf.py did not finish within {TIMEOUT_SECONDS}s"},
+                {
+                    "ok": False,
+                    "error": f"translate_pdf.py did not finish within {TIMEOUT_SECONDS}s",
+                    # whatever it printed before being killed — the real
+                    # diagnostic now, instead of nothing at all
+                    "stdoutTail": "".join(stdout_lines)[-4000:],
+                    "stderrTail": "".join(stderr_lines)[-4000:],
+                },
             )
             return
 
-        if result.returncode != 0:
+        out_thread.join(timeout=5)
+        err_thread.join(timeout=5)
+        stdout_text = "".join(stdout_lines)
+        stderr_text = "".join(stderr_lines)
+
+        if returncode != 0:
             # translate_pdf.py prints the actual reason to stderr on
             # failure (see its `except TranslationError` branch) — that's
             # the useful part, not a Python traceback, so surface it
             # as-is rather than a generic "translation failed"
-            message = (result.stderr or result.stdout or "translate_pdf.py exited non-zero").strip()
+            message = (stderr_text or stdout_text or "translate_pdf.py exited non-zero").strip()
             self._send_json(500, {"ok": False, "error": message[-4000:]})
             return
 
@@ -124,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "ok": False,
                     "error": "translate_pdf.py exited 0 but produced no *-vi.pdf file",
-                    "stdout": result.stdout[-2000:],
+                    "stdout": stdout_text[-2000:],
                 },
             )
             return

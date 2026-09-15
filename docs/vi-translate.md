@@ -444,3 +444,37 @@ Deploy lại 3 file `.html` như thường lệ — không có gì đổi ở qu
   ngay cả khi có job nặng đang chạy. Giới hạn "1 cuốn 1 lúc" thật ra do
   Node (`TranslationWorkerService`) tự kiểm soát, không cần server Python
   đơn luồng để ép điều đó.
+- **Vẫn timeout dù đã nâng lên 3 giờ (10800s)** — nâng số lên không giải
+  quyết được gốc rễ nếu bản thân request tới Google đang bị chặn/throttle
+  gần như toàn bộ (VPS IP dễ bị Google để ý hơn IP nhà riêng). Vấn đề thật
+  sự trước đó là **không nhìn thấy gì để biết đúng nguyên nhân** —
+  `subprocess.run(capture_output=True)` giữ toàn bộ output trong bộ đệm,
+  không in ra `docker logs` cho tới khi tiến trình kết thúc hoặc bị kill,
+  nên 1 job đang chạy thật và 1 job đã treo chết nhìn **giống hệt nhau**
+  từ ngoài nhìn vào. Đã đổi sang `Popen` + 2 thread bơm `stdout`/`stderr`
+  ra `docker compose logs -f pdf-translator` **ngay khi có dòng mới**, và
+  nếu timeout thì phản hồi lỗi kèm luôn 4000 ký tự cuối của cả
+  `stdout`/`stderr` đã in được tới lúc đó — giờ xem log lúc job đang chạy
+  sẽ biết ngay là đang tiến triển hay đã treo.
+
+  Cách kiểm tra nhanh nhất, không cần đợi hàng giờ mới biết: gọi thẳng 1
+  đoạn dịch ngắn qua Google từ trong container, xem có phản hồi trong vài
+  giây không —
+  ```bash
+  docker compose exec pdf-translator python3 -c "
+  import sys, time
+  sys.path.insert(0, '/app/vi-translate')
+  from pdf2zh.translator import GoogleTranslator
+  t = GoogleTranslator('auto', 'vi')
+  start = time.time()
+  try:
+      print('KET QUA:', t.translate('Hello, this is a short test sentence.'))
+      print('MAT:', round(time.time() - start, 1), 's')
+  except Exception as e:
+      print('LOI:', type(e).__name__, e)
+  "
+  ```
+  Không thấy gì sau ~30-60s, hoặc báo lỗi kết nối — Google đang chặn/không
+  gọi được từ VPS này, engine `google` không dùng được ở đây bất kể chỉnh
+  timeout bao lâu, cần đổi hướng khác (dịch tay bằng Handoff ở máy khác,
+  hoặc dùng proxy/VPN cho outbound request).
