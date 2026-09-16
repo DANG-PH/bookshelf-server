@@ -21,6 +21,7 @@ can drift out of sync with whatever's actually pinned in requirements.txt.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -42,6 +43,21 @@ PORT = 8787
 # own copy of the same variable (src/config/env.validation.ts), all three
 # meant to be the exact same number
 TIMEOUT_SECONDS = int(os.environ.get("PDF_TRANSLATOR_TIMEOUT_SECONDS", 3 * 60 * 60))
+
+# translate_pdf.py exits 0 and writes a real PDF even when every single
+# segment failed translation (its own resilience: a formula/font/network
+# failure never throws the whole document away, just leaves that segment
+# in the source language) — confirmed the hard way: a run where Google and
+# MyMemory were both already dead the whole time still came back "ok" with
+# a PDF that was, in substance, still 100% English. exit code and "a file
+# exists" are both useless signals for whether translation actually
+# happened; this is the threshold above which "some untranslated segments"
+# stops being normal wear (a stray formula, an oversized paragraph) and
+# starts meaning "the translation backend was down for most/all of this
+# run" — see UNTRANSLATED_RE below, matched against the line
+# scripts/translate_pdf.py's main() always prints.
+UNTRANSLATED_FAILURE_THRESHOLD = 50
+UNTRANSLATED_RE = re.compile(r"Untranslated segments:\s*(\d+)")
 
 
 # reads one pipe line by line, both printing it to *this* process's own
@@ -173,6 +189,34 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": False,
                     "error": "translate_pdf.py exited 0 but produced no *-vi.pdf file",
                     "stdout": stdout_text[-2000:],
+                },
+            )
+            return
+
+        untranslated_match = UNTRANSLATED_RE.search(stdout_text)
+        untranslated_count = int(untranslated_match.group(1)) if untranslated_match else None
+        if untranslated_count is not None and untranslated_count > UNTRANSLATED_FAILURE_THRESHOLD:
+            # exited 0, a PDF exists — by translate_pdf.py's own contract
+            # that's a "success". But if almost nothing actually got
+            # translated, calling it done here would let the caller mark
+            # the book permanently finished (see TranslationWorkerService/
+            # BooksService.queueTranslation: a 'done' book can never be
+            # auto-retriggered again) over a PDF that's still substantially
+            # in the source language — worse than just failing outright,
+            # since failing at least allows a retry once the underlying
+            # cause (translation backends being down) is resolved.
+            produced[0].unlink(missing_ok=True)
+            self._send_json(
+                422,  # valid request, tool ran fine, result just isn't usable
+                {
+                    "ok": False,
+                    "error": (
+                        f"{untranslated_count} segments stayed untranslated "
+                        f"(over the {UNTRANSLATED_FAILURE_THRESHOLD}-segment threshold) — "
+                        "translate_pdf.py finished without error, but this isn't a "
+                        "usable translation"
+                    ),
+                    "stderrTail": stderr_text[-4000:],
                 },
             )
             return
