@@ -6,7 +6,7 @@ import { promises as fs } from 'fs';
 import * as http from 'http';
 import * as https from 'https';
 import { join, posix } from 'path';
-import { Repository } from 'typeorm';
+import { LessThanOrEqual, Repository } from 'typeorm';
 import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { Book } from '../../database/entities/book.entity';
@@ -16,6 +16,12 @@ interface TranslateResponse {
   ok?: boolean;
   outputPath?: string;
   error?: string;
+  // how much of the document actually got translated this run — see
+  // pdf-translator/server.py. `complete` is the one bit that decides
+  // 'done' vs 'partial'; the counts are just for display.
+  untranslatedCount?: number;
+  totalSegments?: number;
+  complete?: boolean;
   // only present on a timeout response — the last bit of what
   // translate_pdf.py had printed before the sidecar killed it (see
   // pdf-translator/server.py's _pump()). Worth folding into the error
@@ -24,6 +30,13 @@ interface TranslateResponse {
   stdoutTail?: string;
   stderrTail?: string;
 }
+
+// how long a free translation backend's daily quota needs to refill
+// before another retry has any chance of making new progress — see
+// pdf-translator/server.py's comment on the persistent translation
+// cache: retrying sooner would just re-hit the same exhausted quota
+// for no gain.
+const RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 
 // how far behind "book got queued" a poll tick can lag, worst case — the
 // real turnaround is dominated by however long the translator itself
@@ -114,10 +127,27 @@ export class TranslationWorkerService implements OnApplicationBootstrap {
     });
     if (alreadyProcessing > 0) return;
 
-    const next = await this.booksRepo.findOne({
-      where: { translationJobStatus: 'queued' },
-      order: { updatedAt: 'ASC' },
-    });
+    // manual/just-added triggers ('queued', see BooksService.queueTranslation)
+    // always go first — a due retry can wait another 15s poll tick, someone
+    // actively waiting on a fresh queue shouldn't
+    const next =
+      (await this.booksRepo.findOne({
+        where: { translationJobStatus: 'queued' },
+        order: { updatedAt: 'ASC' },
+      })) ??
+      (await this.booksRepo.findOne({
+        where: [
+          {
+            translationJobStatus: 'partial',
+            translationNextRetryAt: LessThanOrEqual(new Date()),
+          },
+          {
+            translationJobStatus: 'failed',
+            translationNextRetryAt: LessThanOrEqual(new Date()),
+          },
+        ],
+        order: { translationNextRetryAt: 'ASC' },
+      }));
     if (!next) return;
 
     this.running = true;
@@ -176,22 +206,47 @@ export class TranslationWorkerService implements OnApplicationBootstrap {
       book.translatedFileOriginalName = book.fileOriginalName
         ? `${book.fileOriginalName.replace(/\.pdf$/i, '')} (bản dịch).pdf`
         : null;
-      book.translationJobStatus = 'done';
+      book.translationUntranslatedCount = data.untranslatedCount ?? null;
+      book.translationTotalSegments = data.totalSegments ?? null;
       book.translationJobError = null;
-      await this.booksRepo.save(book);
 
-      this.logger.log(`[Translate] Xong "${book.title}"`);
-      this.notificationsService
-        .create(`Đã biên dịch xong "${book.title}" sang tiếng Việt.`)
-        .catch(() => undefined);
+      if (data.complete) {
+        book.translationJobStatus = 'done';
+        book.translationNextRetryAt = null;
+        await this.booksRepo.save(book);
+        this.logger.log(`[Translate] Xong "${book.title}"`);
+        this.notificationsService
+          .create(`Đã biên dịch xong "${book.title}" sang tiếng Việt.`)
+          .catch(() => undefined);
+      } else {
+        // still usable — translatedFileUrl above already points at this
+        // run's (more complete than before) output — just not finished
+        // yet, so schedule another attempt once quota has had a chance
+        // to refill rather than requiring someone to click retry by hand
+        book.translationJobStatus = 'partial';
+        book.translationNextRetryAt = new Date(Date.now() + RETRY_DELAY_MS);
+        await this.booksRepo.save(book);
+        this.logger.log(
+          `[Translate] "${book.title}" dịch được một phần (còn ${data.untranslatedCount ?? '?'}/${data.totalSegments ?? '?'} đoạn), sẽ tự thử lại sau`,
+        );
+        this.notificationsService
+          .create(
+            `"${book.title}" đã có bản dịch một phần, đọc được ngay — sẽ tự tiếp tục hoàn thiện.`,
+          )
+          .catch(() => undefined);
+      }
     } catch (err) {
       const message = this.describeError(err).slice(0, 2000);
       book.translationJobStatus = 'failed';
       book.translationJobError = message;
+      // do NOT touch translatedFileUrl here — a previous 'partial' run may
+      // have already produced something readable, and this run failing
+      // (sidecar down, timeout, ...) must not take that away
+      book.translationNextRetryAt = new Date(Date.now() + RETRY_DELAY_MS);
       await this.booksRepo.save(book);
       this.logger.warn(`[Translate] "${book.title}" thất bại: ${message}`);
       this.notificationsService
-        .create(`Biên dịch "${book.title}" thất bại, thử lại nhé.`)
+        .create(`Biên dịch "${book.title}" thất bại, sẽ tự thử lại sau.`)
         .catch(() => undefined);
     } finally {
       await fs

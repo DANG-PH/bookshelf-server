@@ -75,19 +75,44 @@ export class Book {
   @Column({ type: 'varchar', nullable: true })
   detectedLanguage: 'vi' | 'foreign' | null;
 
-  // state of the automated translation job — see TranslationQueueService.
+  // state of the automated translation job — see TranslationWorkerService.
   // null: never queued. 'queued': waiting for a worker slot (only one
   // book translates at a time). 'processing': the PDF translator service
-  // is working on it right now. 'done': translatedFileUrl above is the
+  // is working on it right now. 'partial': at least one run produced a
+  // usable file (translatedFileUrl is set, readers can already open it)
+  // but too many segments are still untranslated to call it finished —
+  // translationNextRetryAt schedules the next automatic attempt, and the
+  // free translation backends' daily quota means this can take many
+  // retries for a big book. 'done': translatedFileUrl is the final
   // result — once here, the auto-translate trigger is retired for this
   // book for good (re-translating is a deliberate manual re-upload, not
-  // something the automated path repeats). 'failed': errored out,
-  // translationJobError has why, and admin can retry (re-queue).
+  // something the automated path repeats). 'failed': the tool itself
+  // errored (not just "still incomplete") — translationJobError has why;
+  // also auto-retried via translationNextRetryAt, same as 'partial'.
   @Column({ type: 'varchar', nullable: true })
-  translationJobStatus: 'queued' | 'processing' | 'done' | 'failed' | null;
+  translationJobStatus:
+    'queued' | 'processing' | 'partial' | 'done' | 'failed' | null;
 
   @Column({ type: 'text', nullable: true })
   translationJobError: string | null;
+
+  // progress snapshot from the most recent run — purely informational
+  // (shown as "X/Y đoạn chưa dịch" in admin.html), not used for any
+  // decision on its own; translationJobStatus already encodes what
+  // matters for logic. Both null until the first run completes.
+  @Column({ type: 'int', nullable: true })
+  translationUntranslatedCount: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  translationTotalSegments: number | null;
+
+  // when TranslationWorkerService.poll() is next allowed to auto-retry a
+  // 'partial' or 'failed' job — set to "now + 24h" after each such run so
+  // a free backend's daily quota has actually reset before trying again,
+  // instead of hammering it every 15s poll tick for no gain. Null means
+  // "not scheduled for retry" (job is 'done', or was never queued).
+  @Column({ type: 'timestamptz', nullable: true })
+  translationNextRetryAt: Date | null;
 
   // either a path served through GET /api/files/covers/:filename,
   // or an external http(s) URL — resolved as-is by the frontend

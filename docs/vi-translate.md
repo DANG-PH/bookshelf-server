@@ -26,22 +26,26 @@ không phải tự chạy công cụ dịch bằng tay nữa.
 ### Trạng thái của 1 cuốn sách
 
 Cột `translationJobStatus` trên `books`: `null` | `queued` | `processing` |
-`done` | `failed`. Kết hợp với `detectedLanguage` (`vi` | `foreign` | `null`)
-và `translatedFileUrl` (có file hay chưa) để quyết định UI/hành vi cho phép.
+`partial` | `done` | `failed`. Kết hợp với `detectedLanguage`
+(`vi` | `foreign` | `null`) và `translatedFileUrl` (có file hay chưa) để
+quyết định UI/hành vi cho phép.
 
-| detectedLanguage | translationJobStatus | translatedFileUrl | Admin thấy gì | Được làm gì |
+| detectedLanguage | translationJobStatus | translatedFileUrl | Admin/reader thấy gì | Được làm gì |
 | --- | --- | --- | --- | --- |
 | `vi` hoặc `null` | bất kỳ | — | Nhãn ngôn ngữ tương ứng (hoặc không có nhãn) | Không có nút "Biên dịch" — không nhận diện được là sách nước ngoài thì không đề xuất dịch |
 | `foreign` | `null` | không | Nhãn "Sách nước ngoài" | Nút **Biên dịch** |
-| `foreign` | `queued` | không | " · Đang chờ biên dịch…" | Không nút gì — đang xếp hàng |
-| `foreign` | `processing` | không | " · Đang biên dịch…" | Không nút gì — đang chạy thật |
+| `foreign` | `queued` | tuỳ (có thể còn file cũ từ lần `partial` trước) | " · Đang chờ biên dịch…" | Không nút gì — đang xếp hàng |
+| `foreign` | `processing` | tuỳ | " · Đang biên dịch…" | Không nút gì — đang chạy thật |
+| `foreign` | `partial` | **có** | " · Đã dịch một phần, đọc được ngay (còn X/Y đoạn chưa dịch) (tự thử lại sau ~N giờ)" — reader thấy link "Đọc bản dịch tiếng Việt (đang tiếp tục hoàn thiện)" | Nút **Dịch tiếp ngay** (ép chạy lại sớm, không bắt buộc — tự động cũng sẽ retry sau ~24h) |
 | `foreign` | `done` | có | " · Có bản dịch tiếng Việt" | **Không còn nút Biên dịch nữa** — không tự dịch lại. Muốn thay bản dịch thì upload tay qua ô "Bản dịch tiếng Việt (PDF)" ở form sửa (đường thủ công vẫn luôn mở, không bị khoá) |
-| `foreign` | `failed` | không | " · Biên dịch lỗi: <lý do>" | Nút **Thử lại** (gọi lại đúng luồng, coi như 1 lần biên dịch mới, không phải "biên dịch thêm lần nữa" của 1 bản đã xong) |
+| `foreign` | `failed` | tuỳ (giữ nguyên file `partial` cũ nếu có, không bị xoá bởi 1 lần chạy lỗi) | " · Biên dịch lỗi: <lý do> (tự thử lại sau ~N giờ)" | Nút **Thử lại ngay** (ép chạy lại sớm — tự động cũng sẽ retry) |
 
-Quy tắc cứng: **1 cuốn chỉ tự động biên dịch xong đúng 1 lần**. `done` là điểm
-dừng vĩnh viễn của luồng tự động — không có cách nào từ UI tự động kích hoạt
-dịch lại 1 cuốn đã `done`. Đây là điều bạn yêu cầu rõ ràng ("sách biên dịch
-rồi thì không được biên dịch lại").
+Quy tắc: **chỉ `done` là điểm dừng vĩnh viễn** của luồng tự động — không có
+cách nào từ UI tự động kích hoạt dịch lại 1 cuốn đã `done`. `partial` và
+`failed` thì ngược lại: **tự động thử lại mỗi ~24 giờ** cho tới khi đạt
+`done` (xem [mục 3](#3-kiến-trúc-hàng-đợi-biên-dịch-tự-động) và
+[mục 5](#5-vì-sao-thiết-kế-như-vậy) — lý do đổi từ "1 lần duy nhất" sang mô
+hình này là để đọc được dần thay vì phải đợi dịch xong 100%).
 
 ### Hành trình người dùng (admin)
 
@@ -59,19 +63,29 @@ Thêm sách → tự nhận diện ngôn ngữ
 
 Vào hàng đợi (queued) → worker rảnh thì lấy ra xử lý (processing)
         │
-        ├─ Thành công (done) → có file dịch, nút Biên dịch biến mất vĩnh viễn,
-        │                        có thông báo qua chuông/push:
-        │                        "Đã biên dịch xong "<tên sách>" sang tiếng Việt."
+        ├─ Dịch xong hẳn (done, ≤ 50 đoạn chưa dịch) → có file dịch, nút Biên
+        │    dịch biến mất vĩnh viễn, có thông báo qua chuông/push:
+        │    "Đã biên dịch xong "<tên sách>" sang tiếng Việt."
         │
-        └─ Thất bại (failed) → hiện lý do lỗi ngay trong danh sách, có
-                                 thông báo: "Biên dịch "<tên sách>" thất bại,
-                                 thử lại nhé." Nút đổi thành "Thử lại".
+        ├─ Dịch được một phần (partial, còn > 50 đoạn chưa dịch) → VẪN có
+        │    file để đọc ngay (thay file cũ nếu có, bản mới luôn đầy đủ hơn
+        │    hoặc bằng bản cũ nhờ cache dịch), có thông báo: ""<tên sách>" đã
+        │    có bản dịch một phần, đọc được ngay — sẽ tự tiếp tục hoàn thiện."
+        │    Tự động xếp lịch thử lại sau ~24 giờ, không cần ai bấm gì.
+        │
+        └─ Lỗi thật sự (failed — sidecar không phản hồi được, crash...) →
+             hiện lý do lỗi ngay trong danh sách, có thông báo: "Biên dịch
+             "<tên sách>" thất bại, sẽ tự thử lại sau." File dịch cũ (nếu có
+             từ lần `partial` trước) KHÔNG bị xoá hay mất link đọc. Cũng tự
+             xếp lịch thử lại sau ~24 giờ.
 ```
 
 Không có "huỷ 1 job đang chạy" ở bản này — 1 job `processing` luôn chạy tới
-khi xong hoặc lỗi (thường vài phút, không phải việc cần huỷ giữa chừng). Việc
-duy nhất "huỷ được" là ở bước hỏi lúc mới thêm sách — bấm Huỷ ở đó chỉ là
-"không làm ngay bây giờ", không phải huỷ vĩnh viễn.
+khi xong hoặc lỗi (thường vài phút tới vài giờ tuỳ sách, không phải việc cần
+huỷ giữa chừng). Việc duy nhất "huỷ được" là ở bước hỏi lúc mới thêm sách —
+bấm Huỷ ở đó chỉ là "không làm ngay bây giờ", không phải huỷ vĩnh viễn. Nút
+**Dịch tiếp ngay**/**Thử lại ngay** ở trạng thái `partial`/`failed` cũng
+không phải "huỷ lịch tự động" — chỉ là ép chạy sớm hơn lịch ~24 giờ đó thôi.
 
 ### Vì sao không dùng popup riêng cho thông báo "biên dịch xong"
 
@@ -164,9 +178,12 @@ lại PDF) là tự chạy nhận diện — không phải sửa DB tay.
     (tối đa 15s). 2 đường gọi vào **cùng 1 method**, cùng logic, không có gì
     khác nhau ngoài "khi nào được gọi".
 
-  Mỗi lần `poll()` chạy: nếu không có sách nào `processing` và có ít nhất 1
-  sách `queued`, lấy sách `queued` **cũ nhất** ra xử lý — xử lý đúng 1 cuốn 1
-  lúc, không song song. Lý do xem [mục 5](#5-vì-sao-thiết-kế-như-vậy).
+  Mỗi lần `poll()` chạy: nếu không có sách nào `processing`, ưu tiên lấy
+  sách `queued` **cũ nhất** (mới thêm/vừa bấm nút — chờ ngay không đáng), nếu
+  không có `queued` nào thì tìm sách `partial`/`failed` có
+  `translationNextRetryAt <= now` (đến lịch tự thử lại), lấy cái đến hạn sớm
+  nhất. Luôn xử lý đúng 1 cuốn 1 lúc, không song song. Lý do xem
+  [mục 5](#5-vì-sao-thiết-kế-như-vậy).
 
   Về phần "fire-and-forget" bạn hỏi: đúng vậy — `POST /books/:id/translate`
   chỉ set `translationJobStatus='queued'` trong Postgres rồi trả lời ngay,
@@ -180,7 +197,13 @@ lại PDF) là tự chạy nhận diện — không phải sửa DB tay.
   `server.py` là 1 HTTP server tối giản (chỉ dùng thư viện chuẩn của Python,
   không FastAPI/Flask) nhận `{inputPath, outputDir}`, chạy
   `scripts/translate_pdf.py` (engine mặc định `google`), trả về
-  `{ok, outputPath}` hoặc `{ok:false, error}`.
+  `{ok:true, outputPath, untranslatedCount, totalSegments, complete}` (bất
+  cứ khi nào tool tạo ra được 1 file PDF, dù dịch được ít hay nhiều — file
+  đó vẫn hữu ích để đọc dở, xem [mục 5](#5-vì-sao-thiết-kế-như-vậy)) hoặc
+  `{ok:false, error}` khi bản thân `translate_pdf.py` lỗi thật (crash,
+  timeout, không tạo được file nào). `complete` là cờ duy nhất Node dùng để
+  quyết định `done` hay `partial` — do Python tính (`untranslatedCount <= 50`),
+  Node không tự lặp lại con số đó.
 - **Fork riêng, không clone thẳng từ upstream** — `Dockerfile` clone từ
   `github.com/DANG-PH/translate-vi-language` (fork riêng), không phải
   `breslee1707/VI-Translate` trực tiếp. Lý do: build image ở đây tự động mỗi
@@ -220,16 +243,24 @@ lại PDF) là tự chạy nhận diện — không phải sửa DB tay.
 
 - `Book` entity thêm các cột (tất cả nullable):
   - `translatedFileUrl`, `translatedFileOriginalName` — cùng kiểu với
-    `fileUrl`/`fileOriginalName`.
+    `fileUrl`/`fileOriginalName`. Có thể trỏ tới 1 file **chưa dịch hết**
+    khi `translationJobStatus==='partial'`.
   - `detectedLanguage: 'vi' | 'foreign' | null`.
-  - `translationJobStatus: 'queued' | 'processing' | 'done' | 'failed' | null`.
+  - `translationJobStatus: 'queued' | 'processing' | 'partial' | 'done' | 'failed' | null`.
   - `translationJobError: string | null` — lý do lỗi lần gần nhất, hiện
     thẳng trong danh sách sách ở admin.
+  - `translationUntranslatedCount`, `translationTotalSegments: number | null`
+    — số đoạn chưa dịch / tổng số đoạn của lần chạy gần nhất, chỉ để hiển thị
+    tiến độ (" · còn X/Y đoạn chưa dịch"), không dùng để quyết định logic gì.
+  - `translationNextRetryAt: Date | null` — worker chỉ tự nhặt lại 1 job
+    `partial`/`failed` khi mốc này đã qua; `null` nghĩa là không có lịch thử
+    lại (đang `done`, hoặc chưa từng chạy).
 - `POST /books/:id/translate` (`BooksController`/`BooksService.queueTranslation`)
   — validate rồi set `translationJobStatus='queued'`. Chặn nếu: sách không
-  phải `detectedLanguage==='foreign'`, đã có `translatedFileUrl`, hoặc đang
-  `queued`/`processing` sẵn. **Cho phép** re-queue khi đang `failed` (thử
-  lại).
+  phải `detectedLanguage==='foreign'`, đã `done`, hoặc đang `queued`/
+  `processing` sẵn. **Cho phép** re-queue khi đang `partial` hoặc `failed` —
+  đây là cách ép chạy sớm hơn lịch tự động ~24 giờ, không phải trường hợp đặc
+  biệt gì.
 - `TranslationQueueModule` (`src/modules/translation-queue/`) — chỉ cần
   `TypeOrmModule.forFeature([Book])` + `NotificationsModule`, đăng ký thẳng
   trong `AppModule` giống `RemindersModule`. Có `exports: [TranslationWorkerService]`
@@ -239,10 +270,14 @@ lại PDF) là tự chạy nhận diện — không phải sửa DB tay.
 - `POST /books` và `PATCH /books/:id` vẫn nhận field multipart `translatedFile`
   như trước — đường **upload tay** không bị thay thế, chỉ là giờ có thêm
   đường **tự động** song song. Không có field "dán link" cho bản dịch.
-- `GET /catalog` trả thêm `translatedFile` (URL tuyệt đối) — dùng chung cho
-  cả file đến từ tự động lẫn upload tay, trang đọc không phân biệt được và
-  không cần phân biệt. `detectedLanguage`/`translationJobStatus`/
-  `translationJobError` **chỉ** có trong `GET /books` (trang admin dùng).
+- `GET /catalog` trả thêm `translatedFile` (URL tuyệt đối, có cả khi
+  `partial`) và `translationComplete` (`true` chỉ khi `done` — cho
+  `index.html` biết có hiện thêm nhãn "(đang tiếp tục hoàn thiện)" hay
+  không). `translatedFile` dùng chung cho cả file đến từ tự động lẫn upload
+  tay, trang đọc không phân biệt được và không cần phân biệt.
+  `detectedLanguage`/`translationJobStatus`/`translationJobError`/
+  `translationUntranslatedCount`/`translationTotalSegments`/
+  `translationNextRetryAt` **chỉ** có trong `GET /books` (trang admin dùng).
 - Không thêm dependency npm nào — `pdf-parse` đã có sẵn; hàng đợi dùng
   Postgres + `@nestjs/schedule` (đã cài từ tính năng nhắc nhở định kỳ), không
   cần Redis/BullMQ.
@@ -303,6 +338,32 @@ vì bỏ qua:
 Vẫn giữ nguyên **đường thủ công** (upload tay bản dịch qua form sửa sách) —
 không bị thay thế, phòng khi worker lỗi, chưa deploy container, hoặc cần
 dùng Handoff cho 1 cuốn cụ thể.
+
+### Vì sao thêm trạng thái `partial` (dịch dở vẫn đọc được)
+
+Thiết kế ban đầu là "tất cả hoặc không gì cả": 1 lần chạy phải dịch xong gần
+hết mới được coi là thành công, còn lại thì xoá file vừa tạo và báo lỗi
+(`failed`) để giữ nguyên tắc "không đánh dấu `done` cho 1 bản dịch dở dang".
+Vấn đề gặp phải trong thực tế: **quota miễn phí của MyMemory (~200 đoạn/ngày)
+quá nhỏ so với 1 cuốn sách kỹ thuật thật** (ví dụ *Designing Data-Intensive
+Applications*: 4279 đoạn) — với luật cũ, sách sẽ **không có gì để đọc trong
+~3 tuần liền**, rồi mới xong nguyên cuốn 1 lần, dù server dịch được thêm mỗi
+ngày (nhờ cache dịch giữ tiến độ qua các lần chạy, xem
+[`pdf2zh/cache.py`](https://github.com/DANG-PH/translate-vi-language/blob/main/pdf2zh/cache.py) —
+sqlite trong container, còn miễn container không bị rebuild).
+
+Sửa lại: tách rõ 2 khái niệm vốn bị gộp làm một — "**tool chạy có lỗi
+không**" (crash, timeout → `failed`, giữ nguyên) và "**dịch được bao nhiêu**"
+(số đoạn còn thiếu → không còn quyết định thành/bại nữa, chỉ quyết định
+`done` hay `partial`). Một file dịch dở vẫn là thứ hữu ích để đọc — chương
+đầu thường dịch xong trước (dịch theo thứ tự trang), nên trải nghiệm thực tế
+gần với "đọc dần mỗi ngày một ít" dù cơ chế bên dưới vẫn là "thay nguyên file
+mỗi lần chạy lại", không phải cập nhật từng đoạn.
+
+Đánh đổi cần biết: **không còn khái niệm "bản dịch luôn hoàn chỉnh hoặc
+không có gì"** — reader có thể mở 1 file còn nhiều đoạn tiếng Anh xen giữa.
+Nhãn "(đang tiếp tục hoàn thiện)" ở `index.html` và tỉ lệ đoạn chưa dịch ở
+admin.html là để không ai hiểu lầm 1 bản `partial` là bản cuối cùng.
 
 ---
 

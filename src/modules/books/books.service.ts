@@ -347,11 +347,14 @@ export class BooksService {
         'Chỉ biên dịch được sách được nhận diện là sách nước ngoài',
       );
     }
-    if (book.translatedFileUrl) {
-      // deliberate: an automated re-translate of a book that already has
-      // one is never triggered on its own — see docs/vi-translate.md.
-      // Replacing it is still possible, just has to be a deliberate
-      // manual upload through the edit form, not this endpoint.
+    if (book.translationJobStatus === 'done') {
+      // deliberate: an automated re-translate of a book that's already
+      // finished is never triggered on its own — see docs/vi-translate.md.
+      // Replacing it is still possible, just has to be a deliberate manual
+      // upload through the edit form, not this endpoint. A 'partial' book
+      // (translatedFileUrl set, but not yet 'done') is NOT blocked here —
+      // that's exactly the case this endpoint is for: force the next
+      // auto-retry to happen now instead of waiting for its scheduled time.
       throw new BadRequestException('Sách này đã có bản dịch rồi');
     }
     if (
@@ -362,6 +365,7 @@ export class BooksService {
     }
     book.translationJobStatus = 'queued';
     book.translationJobError = null;
+    book.translationNextRetryAt = null;
     const saved = await this.booksRepo.save(book);
     // nudge the worker to check right now instead of waiting for its next
     // @Cron tick (up to 15s away) — not awaited: the admin gets "queued"

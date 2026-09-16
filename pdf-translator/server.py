@@ -51,13 +51,23 @@ TIMEOUT_SECONDS = int(os.environ.get("PDF_TRANSLATOR_TIMEOUT_SECONDS", 3 * 60 * 
 # MyMemory were both already dead the whole time still came back "ok" with
 # a PDF that was, in substance, still 100% English. exit code and "a file
 # exists" are both useless signals for whether translation actually
-# happened; this is the threshold above which "some untranslated segments"
-# stops being normal wear (a stray formula, an oversized paragraph) and
-# starts meaning "the translation backend was down for most/all of this
-# run" — see UNTRANSLATED_RE below, matched against the line
-# scripts/translate_pdf.py's main() always prints.
-UNTRANSLATED_FAILURE_THRESHOLD = 50
+# happened — see UNTRANSLATED_RE/TOTAL_RE below, matched against the two
+# lines scripts/translate_pdf.py's main() always prints.
+#
+# This used to delete the file and fail the request outright above this
+# threshold. It doesn't anymore: the translation cache (pdf2zh/cache.py,
+# a local sqlite db keyed by source text) is persistent across runs as
+# long as this container isn't rebuilt, and a free translation backend's
+# daily quota only ever covers a slice of a real book — so the honest
+# behaviour for a big book is "hand back whatever got translated so far,
+# retry again later, and it gets a little more complete each time" rather
+# than "throw everything away and report failure until some single run
+# somehow finishes the whole book in one quota window." The caller
+# (TranslationWorkerService) is the one that decides 'done' vs 'partial'
+# from the counts below, and schedules the next retry.
+UNTRANSLATED_DONE_THRESHOLD = 50
 UNTRANSLATED_RE = re.compile(r"Untranslated segments:\s*(\d+)")
+TOTAL_RE = re.compile(r"Total segments:\s*(\d+)")
 
 
 # reads one pipe line by line, both printing it to *this* process's own
@@ -194,34 +204,24 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         untranslated_match = UNTRANSLATED_RE.search(stdout_text)
-        untranslated_count = int(untranslated_match.group(1)) if untranslated_match else None
-        if untranslated_count is not None and untranslated_count > UNTRANSLATED_FAILURE_THRESHOLD:
-            # exited 0, a PDF exists — by translate_pdf.py's own contract
-            # that's a "success". But if almost nothing actually got
-            # translated, calling it done here would let the caller mark
-            # the book permanently finished (see TranslationWorkerService/
-            # BooksService.queueTranslation: a 'done' book can never be
-            # auto-retriggered again) over a PDF that's still substantially
-            # in the source language — worse than just failing outright,
-            # since failing at least allows a retry once the underlying
-            # cause (translation backends being down) is resolved.
-            produced[0].unlink(missing_ok=True)
-            self._send_json(
-                422,  # valid request, tool ran fine, result just isn't usable
-                {
-                    "ok": False,
-                    "error": (
-                        f"{untranslated_count} segments stayed untranslated "
-                        f"(over the {UNTRANSLATED_FAILURE_THRESHOLD}-segment threshold) — "
-                        "translate_pdf.py finished without error, but this isn't a "
-                        "usable translation"
-                    ),
-                    "stderrTail": stderr_text[-4000:],
-                },
-            )
-            return
+        total_match = TOTAL_RE.search(stdout_text)
+        untranslated_count = int(untranslated_match.group(1)) if untranslated_match else 0
+        total_segments = int(total_match.group(1)) if total_match else 0
+        complete = untranslated_count <= UNTRANSLATED_DONE_THRESHOLD
 
-        self._send_json(200, {"ok": True, "outputPath": str(produced[0])})
+        self._send_json(
+            200,
+            {
+                "ok": True,
+                "outputPath": str(produced[0]),
+                "untranslatedCount": untranslated_count,
+                "totalSegments": total_segments,
+                # caller marks the book 'done' only when this is true —
+                # anything else is a 'partial' result: still handed to the
+                # reader as-is, just scheduled to retry and improve later
+                "complete": complete,
+            },
+        )
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         # `docker logs` already captures stdout for this container; the

@@ -68,9 +68,16 @@ export class CatalogService {
             file: resolveAsset(b.fileUrl),
             cover: resolveAsset(b.coverUrl),
             translatedFile: resolveAsset(b.translatedFileUrl ?? undefined),
-            // only queued/processing is worth a reader ever seeing — a
-            // failed job is an admin-side "retry?" decision, not
-            // something to surface to whoever's just browsing
+            // translatedFile can be set while translationJobStatus is
+            // still 'partial' — a free translation backend's daily quota
+            // means a big book fills in over many retries, and the reader
+            // gets to start on whatever's ready rather than waiting for
+            // every last segment. Only 'done' means "fully finished."
+            translationComplete: b.translationJobStatus === 'done',
+            // only queued/processing is worth a reader ever seeing here —
+            // a failed job is an admin-side concern, not something to
+            // surface to whoever's just browsing (it still auto-retries
+            // on its own either way, see TranslationWorkerService)
             translating:
               b.translationJobStatus === 'queued' ||
               b.translationJobStatus === 'processing',
