@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -41,7 +41,7 @@ const POLL_CRON = '*/15 * * * * *';
 // so running two translations at once would just make both slower, not
 // finish sooner
 @Injectable()
-export class TranslationWorkerService {
+export class TranslationWorkerService implements OnApplicationBootstrap {
   private readonly logger = new Logger(TranslationWorkerService.name);
   private readonly translatorUrl?: string;
   private readonly translatorUploadPath: string;
@@ -74,6 +74,32 @@ export class TranslationWorkerService {
     );
     // add a small buffer so the Python sidecar times out first
     this.translateTimeoutMs = (serverTimeoutSec + 60) * 1000;
+  }
+
+  // a book can ONLY be 'processing' while some process is actively in
+  // processOne() for it — so any 'processing' row still on disk when the
+  // app is just starting up was, by definition, abandoned mid-flight by
+  // the *previous* process (killed/restarted — pm2, a deploy, a crash),
+  // not something this new process is doing itself. Found the hard way:
+  // one such row sat stuck at 'processing' for 19 hours after a restart
+  // dropped the in-flight request with nothing left to ever update it —
+  // the sidecar itself had already stopped working on it long before.
+  // Requeue rather than fail outright: whatever partial work existed on
+  // the sidecar side is gone either way (a fresh container/process has
+  // no memory of it), but the book itself is still just as translatable
+  // as it was before the interruption.
+  async onApplicationBootstrap(): Promise<void> {
+    const orphaned = await this.booksRepo.find({
+      where: { translationJobStatus: 'processing' },
+    });
+    if (!orphaned.length) return;
+    this.logger.warn(
+      `[Translate] ${orphaned.length} sách bị kẹt ở 'processing' từ lần chạy trước (rất có thể do restart giữa chừng) — đưa lại vào hàng đợi: ${orphaned.map((b) => b.title).join(', ')}`,
+    );
+    for (const book of orphaned) {
+      book.translationJobStatus = 'queued';
+      await this.booksRepo.save(book);
+    }
   }
 
   @Cron(POLL_CRON)
