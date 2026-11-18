@@ -11,20 +11,12 @@ import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Book } from '../../database/entities/book.entity';
 import { BookQuote } from '../../database/entities/book-quote.entity';
-import {
-  BookReview,
-  BookReviewAuthor,
-} from '../../database/entities/book-review.entity';
 import { MAX_PDF_SIZE_BYTES } from '../../common/utils/storage';
-import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import { TranslationWorkerService } from '../translation-queue/translation-worker.service';
 import { detectBookLanguage } from './detect-language';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
-import { UpdateBookStatusDto } from './dto/update-book-status.dto';
-import { CreateBookReviewDto } from './dto/create-book-review.dto';
 import { CreateBookQuoteDto } from './dto/create-book-quote.dto';
 
 export interface UploadedBookFiles {
@@ -48,14 +40,10 @@ export class BooksService {
   constructor(
     @InjectRepository(Book)
     private readonly booksRepo: Repository<Book>,
-    @InjectRepository(BookReview)
-    private readonly bookReviewsRepo: Repository<BookReview>,
     @InjectRepository(BookQuote)
     private readonly bookQuotesRepo: Repository<BookQuote>,
     private readonly categoriesService: CategoriesService,
     private readonly config: ConfigService,
-    private readonly aiService: AiService,
-    private readonly notificationsService: NotificationsService,
     private readonly translationWorkerService: TranslationWorkerService,
   ) {
     this.uploadDir = this.config.get<string>('UPLOAD_DIR', './uploads');
@@ -65,58 +53,8 @@ export class BooksService {
     return this.booksRepo.find({
       where: categoryId ? { categoryId } : {},
       order: { createdAt: 'ASC' },
-      relations: { category: true, reviews: true, quotes: true },
+      relations: { category: true, quotes: true },
     });
-  }
-
-  // used by RemindersService's "đọc dở lâu rồi" nudge — same threshold
-  // and same startedAt-based logic as the frontend's own stalled-books
-  // card, just queryable server-side for the cron job
-  async findStalledReading(days: number): Promise<Book[]> {
-    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    return this.booksRepo
-      .createQueryBuilder('book')
-      .where('book.readStatus = :status', { status: 'reading' })
-      .andWhere('book.startedAt IS NOT NULL')
-      .andWhere('book.startedAt <= :cutoff', { cutoff })
-      .orderBy('book.startedAt', 'ASC')
-      .getMany();
-  }
-
-  // used by RemindersService's occasional "nhớ lại câu này" nudge —
-  // picks uniformly at random across all saved quotes, not just recent
-  // ones, so an old favorite has just as much chance to resurface.
-  // Random-offset-in-app instead of ORDER BY RANDOM()/RAND(): those are
-  // spelled differently on postgres vs mysql, and this stays portable
-  // without needing to branch on DB_TYPE (fine perf-wise too — this is
-  // a personal library's worth of quotes, not a large table)
-  async getRandomQuote(): Promise<{ bookTitle: string; text: string } | null> {
-    const count = await this.bookQuotesRepo.count();
-    if (count === 0) return null;
-    const offset = Math.floor(Math.random() * count);
-    const [quote] = await this.bookQuotesRepo.find({
-      relations: { book: true },
-      skip: offset,
-      take: 1,
-    });
-    if (!quote) return null;
-    return { bookTitle: quote.book.title, text: quote.text };
-  }
-
-  // used by RemindersService's occasional "còn cuốn này chưa đọc" nudge —
-  // 'want' (đánh dấu "muốn đọc") or never touched at all (null), same
-  // random-offset approach as getRandomQuote() above for the same reason
-  async findRandomUnstarted(): Promise<Book | null> {
-    const qb = this.booksRepo
-      .createQueryBuilder('book')
-      .where('book.readStatus IS NULL OR book.readStatus = :want', {
-        want: 'want',
-      });
-    const count = await qb.getCount();
-    if (count === 0) return null;
-    const offset = Math.floor(Math.random() * count);
-    const [book] = await qb.orderBy('book.id').skip(offset).take(1).getMany();
-    return book || null;
   }
 
   async findOne(id: string): Promise<Book> {
@@ -128,51 +66,8 @@ export class BooksService {
     return book;
   }
 
-  // per-author, same reasoning as DiaryEntry.likedBy — one person's
-  // heart shouldn't silently overwrite the other's
-  async toggleFavorite(id: string, author: BookReviewAuthor): Promise<Book> {
-    const book = await this.findOne(id);
-    const set = new Set(book.favoritedBy || []);
-    if (set.has(author)) set.delete(author);
-    else set.add(author);
-    book.favoritedBy = [...set];
-    return this.booksRepo.save(book);
-  }
-
-  // always adds a brand new entry — a person can rate/review the same
-  // book as many times as they want (re-reads, updated thoughts, …)
-  // instead of one submission overwriting the last
-  async addReview(
-    bookId: string,
-    dto: CreateBookReviewDto,
-  ): Promise<BookReview> {
-    await this.findOne(bookId); // 404s if the book doesn't exist
-
-    const hasContent = dto.rating != null || Boolean(dto.review?.trim());
-    if (!hasContent) {
-      throw new BadRequestException('Cần có sao hoặc cảm nhận');
-    }
-
-    const entity = this.bookReviewsRepo.create({
-      bookId,
-      author: dto.author,
-      rating: dto.rating ?? null,
-      review: dto.review?.trim() || null,
-    });
-    return this.bookReviewsRepo.save(entity);
-  }
-
-  async deleteReview(bookId: string, reviewId: string): Promise<void> {
-    const review = await this.bookReviewsRepo.findOne({
-      where: { id: reviewId, bookId },
-    });
-    if (!review) throw new NotFoundException('Không tìm thấy đánh giá');
-    await this.bookReviewsRepo.remove(review);
-  }
-
-  // no author on a quote — it's the book's own words, not either
-  // person's opinion — so unlike reviews there's no "whose entry is
-  // this" to gate deletion behind; either person can remove any of them
+  // a quote is the book's own words — admin-managed, shown read-only
+  // to readers on the catalog
   async addQuote(bookId: string, dto: CreateBookQuoteDto): Promise<BookQuote> {
     await this.findOne(bookId); // 404s if the book doesn't exist
     const entity = this.bookQuotesRepo.create({
@@ -223,14 +118,7 @@ export class BooksService {
       detectedLanguage,
     });
 
-    const saved = await this.booksRepo.save(book);
-    // neither of these is awaited — indexing and logging a notification
-    // shouldn't hold up the response for whoever's adding the book
-    this.aiService.indexBookInBackground(saved);
-    this.notificationsService
-      .create(`Đã thêm sách mới: "${saved.title}"`)
-      .catch(() => undefined);
-    return saved;
+    return this.booksRepo.save(book);
   }
 
   async update(
@@ -288,38 +176,10 @@ export class BooksService {
       await this.deleteLocalAsset(oldTranslatedFileUrl);
     }
 
-    // only a changed PDF needs re-embedding; a title-only edit just
-    // relabels the existing chunks (see AiService.renameBookInIndex)
-    if (resolvedFile) this.aiService.indexBookInBackground(saved);
-    else if (dto.title) this.aiService.renameBookInIndex(saved.id, saved.title);
-
     return saved;
   }
 
-  // the one mutation anyone browsing the site can trigger, not just
-  // whoever's adding books — kept separate from update() so it never
-  // touches files or requires multipart parsing
-  async updateStatus(id: string, dto: UpdateBookStatusDto): Promise<Book> {
-    const book = await this.findOne(id);
-    if (dto.readStatus !== undefined) {
-      const next = dto.readStatus;
-      // real timestamps instead of guessing from updatedAt (which
-      // changes on any edit, not just a status change) — these back
-      // both the "đọc năm nay" stat and the "đọc dở lâu rồi" nudge
-      if (next === 'reading' && book.readStatus !== 'reading') {
-        book.startedAt = new Date();
-      }
-      if (next === 'done' && book.readStatus !== 'done') {
-        book.finishedAt = new Date();
-      }
-      if (next !== 'done') book.finishedAt = null;
-      if (next !== 'reading' && next !== 'done') book.startedAt = null;
-      book.readStatus = next;
-    }
-    return this.booksRepo.save(book);
-  }
-
-  // fire-and-forget from the frontend on every card open — an atomic SQL
+  // fire-and-forget from the reading page on every book open — an atomic SQL
   // increment instead of read-modify-write so rapid/concurrent clicks
   // can't race and lose a count; silently a no-op if the id is stale
   async incrementView(id: string): Promise<void> {
@@ -332,7 +192,6 @@ export class BooksService {
     await this.deleteLocalAsset(book.fileUrl);
     await this.deleteLocalAsset(book.coverUrl);
     await this.deleteLocalAsset(book.translatedFileUrl ?? undefined);
-    this.aiService.removeBookIndexInBackground(id);
   }
 
   // marks a book "please translate this" — TranslationWorkerService (a

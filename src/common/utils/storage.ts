@@ -10,7 +10,7 @@ const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 // multer's diskStorage never creates its destination folder — it just
 // fails the upload if it's missing. UPLOAD_DIR is commonly a mounted
 // volume kept outside the git repo specifically so deploys don't touch
-// it, so a subfolder a new feature needs (e.g. "diary") can easily not
+// it, so a subfolder a new feature needs can easily not
 // exist yet on a server that's never had one before. Cheap to make this
 // self-healing instead of a silent 500 on the first upload.
 function ensureDir(dir: string): string {
@@ -26,18 +26,6 @@ export function bookAssetsStorage(uploadDir: string) {
       const subfolder = file.fieldname === 'cover' ? 'covers' : 'books';
       cb(null, ensureDir(`${uploadDir}/${subfolder}`));
     },
-    filename: (_req, file, cb) => {
-      cb(null, `${uuidv4()}${extname(file.originalname).toLowerCase()}`);
-    },
-  });
-}
-
-// generic single-image storage, for anything that just needs "upload one
-// picture into its own subfolder" without book-specific field routing
-export function imageAssetStorage(uploadDir: string, subfolder: string) {
-  return diskStorage({
-    destination: (_req, _file, cb) =>
-      cb(null, ensureDir(`${uploadDir}/${subfolder}`)),
     filename: (_req, file, cb) => {
       cb(null, `${uuidv4()}${extname(file.originalname).toLowerCase()}`);
     },
@@ -70,7 +58,6 @@ export function imageFileFilter(
 }
 
 export const MAX_PDF_SIZE_BYTES = 80 * 1024 * 1024; // 80MB
-export const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024; // 8MB
 
 // routes to the right mimetype check based on which form field the file
 // came in on ("file" = the book PDF, "cover" = the cover image)

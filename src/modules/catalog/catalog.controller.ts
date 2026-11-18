@@ -1,28 +1,18 @@
-import { Controller, Get, Req } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
-import { DiscordAlertService } from '../notifications/discord-alert.service';
+import { Controller, Get } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator';
 import { CatalogService } from './catalog.service';
 
 @ApiTags('catalog')
-@ApiBearerAuth()
 @Controller('catalog')
 export class CatalogController {
-  constructor(
-    private readonly catalogService: CatalogService,
-    private readonly discordAlert: DiscordAlertService,
-  ) {}
+  constructor(private readonly catalogService: CatalogService) {}
 
+  // the whole library, readable by anyone — no login needed to browse
+  // and read books, only to add/edit them (see /books, admin-only)
+  @Public()
   @Get()
-  get(@Req() req: Request) {
-    // fire-and-forget — this is what actually catches "opened the site"
-    // when the PIN form itself was skipped thanks to a cached JWT
-    this.discordAlert
-      .siteVisit({
-        ip: req.ip || '',
-        userAgent: req.headers['user-agent'] || '',
-      })
-      .catch(() => undefined);
+  get() {
     return this.catalogService.build();
   }
 }

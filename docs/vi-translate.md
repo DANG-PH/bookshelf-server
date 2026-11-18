@@ -64,18 +64,17 @@ Thêm sách → tự nhận diện ngôn ngữ
 Vào hàng đợi (queued) → worker rảnh thì lấy ra xử lý (processing)
         │
         ├─ Dịch xong hẳn (done, ≤ 50 đoạn chưa dịch) → có file dịch, nút Biên
-        │    dịch biến mất vĩnh viễn, có thông báo qua chuông/push:
-        │    "Đã biên dịch xong "<tên sách>" sang tiếng Việt."
+        │    dịch biến mất vĩnh viễn, trạng thái cập nhật ngay trong danh
+        │    sách sách ở trang quản trị.
         │
         ├─ Dịch được một phần (partial, còn > 50 đoạn chưa dịch) → VẪN có
         │    file để đọc ngay (thay file cũ nếu có, bản mới luôn đầy đủ hơn
-        │    hoặc bằng bản cũ nhờ cache dịch), có thông báo: ""<tên sách>" đã
-        │    có bản dịch một phần, đọc được ngay — sẽ tự tiếp tục hoàn thiện."
+        │    hoặc bằng bản cũ nhờ cache dịch), danh sách hiện "Đã dịch một
+        │    phần, đọc được ngay".
         │    Tự động xếp lịch thử lại sau ~24 giờ, không cần ai bấm gì.
         │
         └─ Lỗi thật sự (failed — sidecar không phản hồi được, crash...) →
-             hiện lý do lỗi ngay trong danh sách, có thông báo: "Biên dịch
-             "<tên sách>" thất bại, sẽ tự thử lại sau." File dịch cũ (nếu có
+             hiện lý do lỗi ngay trong danh sách. File dịch cũ (nếu có
              từ lần `partial` trước) KHÔNG bị xoá hay mất link đọc. Cũng tự
              xếp lịch thử lại sau ~24 giờ.
 ```
@@ -87,12 +86,11 @@ bấm Huỷ ở đó chỉ là "không làm ngay bây giờ", không phải hu�
 **Dịch tiếp ngay**/**Thử lại ngay** ở trạng thái `partial`/`failed` cũng
 không phải "huỷ lịch tự động" — chỉ là ép chạy sớm hơn lịch ~24 giờ đó thôi.
 
-### Vì sao không dùng popup riêng cho thông báo "biên dịch xong"
+### Theo dõi trạng thái ở đâu
 
-Đã có sẵn hệ thống chuông thông báo + push notification (dùng cho "thêm sách
-mới", nhắc nhở định kỳ...) — dùng lại đúng kênh đó
-(`NotificationsService.create()`) thay vì dựng thêm 1 cơ chế popup riêng chỉ
-cho mỗi việc này. Admin đã quen nhìn vào chuông, không cần học thêm 1 chỗ mới.
+Trong danh sách "Sách đã thêm" ở trang quản trị — trang tự làm mới mỗi 10 giây
+khi đang có sách chờ/đang dịch. Kết quả cũng được ghi vào log của backend
+(`[Translate] ...`).
 
 ---
 
@@ -124,8 +122,7 @@ const isVietnamese =
   0.01;
 ```
 
-Lấy mẫu 5 trang đầu qua `pdf-parse` (đã có sẵn trong `package.json`, dùng cho
-RAG chatbot — không thêm dependency nào). `null` (không đoán được — PDF quét
+Lấy mẫu 5 trang đầu qua `pdf-parse`. `null` (không đoán được — PDF quét
 ảnh không lớp chữ, mã hoá...) thì để trống, không đoán bừa. Tính lại mỗi khi
 thêm sách mới, mỗi khi sửa sách kèm đổi file PDF gốc — **và mỗi khi sửa 1
 cuốn mà `detectedLanguage` đang là `null`**, dùng thẳng file đang lưu sẵn, dù
@@ -189,8 +186,8 @@ lại PDF) là tự chạy nhận diện — không phải sửa DB tay.
   chỉ set `translationJobStatus='queued'` trong Postgres rồi trả lời ngay,
   **không đợi** việc dịch xong. Việc dịch thật sự chạy hoàn toàn tách biệt
   khỏi mọi HTTP request, kể cả request đã tạo ra job đó — kết quả (xong hay
-  lỗi) chỉ được biết qua thông báo chuông/push sau này, không qua response
-  của request nào cả.
+  lỗi) chỉ được biết qua trạng thái trong danh sách sách ở trang quản trị,
+  không qua response của request nào cả.
 - **`pdf-translator`** — container Docker riêng
   ([`pdf-translator/Dockerfile`](../pdf-translator/Dockerfile),
   [`server.py`](../pdf-translator/server.py)) đóng gói VI-Translate + Python.
@@ -228,9 +225,8 @@ lại PDF) là tự chạy nhận diện — không phải sửa DB tay.
   qua mạng.
 - **Engine dịch: `google`, không phải `handoff`** — quyết định có chủ đích
   sau khi cân nhắc: dùng Gemini (chế độ tương đương Handoff) sẽ chính xác
-  thuật ngữ hơn, nhưng tốn thêm token/chi phí Gemini mỗi cuốn sách, và API
-  key Gemini hiện tại nên **dành riêng cho chatbot** của thư viện, không chia
-  sẻ ngân sách với việc dịch hàng loạt đoạn văn. `google` miễn phí, không
+  thuật ngữ hơn, nhưng tốn thêm token/chi phí Gemini mỗi cuốn sách khi dịch
+  hàng loạt đoạn văn. `google` miễn phí, không
   đụng tới Gemini, đổi lại độ chính xác thuật ngữ chuyên ngành thấp hơn — nếu
   1 cuốn cụ thể cần chất lượng cao hơn, vẫn dịch tay bằng Handoff được, xem
   [mục 6](#6-cách-dịch-tay-dự-phòng--sách-cần-chất-lượng-cao-hơn).
@@ -447,8 +443,8 @@ pm2 logs --lines 60
 
 Kiểm tra: log sạch, không lỗi `TypeOrmModule`. Cột mới tự tạo trong bảng
 `books` nhờ `synchronize: true` — không cần migration tay. Thử: thêm 1 cuốn
-sách nước ngoài, xác nhận biên dịch ngay khi được hỏi, đợi ít phút, xem chuông
-thông báo có báo "Đã biên dịch xong..." không.
+sách nước ngoài, xác nhận biên dịch ngay khi được hỏi, đợi ít phút, xem trạng
+thái trong danh sách "Sách đã thêm" ở trang quản trị có chuyển sang xong không.
 
 ### 7.4. Frontend
 

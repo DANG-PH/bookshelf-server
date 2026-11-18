@@ -8,9 +8,8 @@ import {
 } from 'typeorm';
 import { Book } from './book.entity';
 
-// a saved excerpt from the book itself — no author field, unlike
-// BookReview: a quote is the book's own words, not either person's
-// opinion, so there's nothing to attribute
+// a saved excerpt from the book itself — the book's own words, so there's
+// no author to attribute
 @Entity('book_quotes')
 export class BookQuote {
   @PrimaryGeneratedColumn('uuid')

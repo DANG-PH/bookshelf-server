@@ -15,14 +15,12 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator';
 import { BookLookupService } from './book-lookup.service';
 import { BooksService } from './books.service';
 import type { UploadedBookFiles } from './books.service';
 import { CreateBookDto } from './dto/create-book.dto';
-import { ToggleBookFavoriteDto } from './dto/toggle-book-favorite.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
-import { UpdateBookStatusDto } from './dto/update-book-status.dto';
-import { CreateBookReviewDto } from './dto/create-book-review.dto';
 import { CreateBookQuoteDto } from './dto/create-book-quote.dto';
 
 const UPLOAD_FIELDS = [
@@ -31,6 +29,8 @@ const UPLOAD_FIELDS = [
   { name: 'translatedFile', maxCount: 1 },
 ];
 
+// Everything here is admin-only (global JwtAuthGuard) except the view
+// counter — readers browse through the public GET /catalog instead.
 @ApiTags('books')
 @ApiBearerAuth()
 @Controller('books')
@@ -64,46 +64,13 @@ export class BooksController {
     return this.booksService.findOne(id);
   }
 
-  // plain-JSON PATCH, deliberately not behind FileFieldsInterceptor — this
-  // is the one thing the site lets anyone browsing (not just whoever's
-  // adding books) change directly from the reading view
-  @Patch(':id/status')
-  updateStatus(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateBookStatusDto,
-  ) {
-    return this.booksService.updateStatus(id, dto);
-  }
-
+  // public: bumped by the reading page whenever someone opens a book —
+  // just the "👁 N" badge, not an analytics system
+  @Public()
   @Post(':id/view')
   @HttpCode(HttpStatus.NO_CONTENT)
   incrementView(@Param('id', ParseUUIDPipe) id: string) {
     return this.booksService.incrementView(id);
-  }
-
-  @Patch(':id/favorite')
-  toggleFavorite(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ToggleBookFavoriteDto,
-  ) {
-    return this.booksService.toggleFavorite(id, dto.author);
-  }
-
-  @Post(':id/reviews')
-  addReview(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CreateBookReviewDto,
-  ) {
-    return this.booksService.addReview(id, dto);
-  }
-
-  @Delete(':id/reviews/:reviewId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  deleteReview(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('reviewId', ParseUUIDPipe) reviewId: string,
-  ) {
-    return this.booksService.deleteReview(id, reviewId);
   }
 
   @Post(':id/quotes')
@@ -152,8 +119,7 @@ export class BooksController {
 
   // fire-and-forget from the admin's point of view — this just queues
   // the job and returns immediately; TranslationWorkerService (polling,
-  // separate module) does the actual translating in the background and
-  // notifies through the existing bell/push channel when it's done
+  // separate module) does the actual translating in the background
   @Post(':id/translate')
   queueTranslation(@Param('id', ParseUUIDPipe) id: string) {
     return this.booksService.queueTranslation(id);

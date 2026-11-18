@@ -9,10 +9,7 @@ import {
 } from '../../common/utils/storage';
 import { Book } from '../../database/entities/book.entity';
 import { BookQuote } from '../../database/entities/book-quote.entity';
-import { BookReview } from '../../database/entities/book-review.entity';
-import { AiModule } from '../ai/ai.module';
 import { CategoriesModule } from '../categories/categories.module';
-import { NotificationsModule } from '../notifications/notifications.module';
 import { TranslationQueueModule } from '../translation-queue/translation-queue.module';
 import { BookLookupService } from './book-lookup.service';
 import { BooksController } from './books.controller';
@@ -20,10 +17,8 @@ import { BooksService } from './books.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Book, BookReview, BookQuote]),
+    TypeOrmModule.forFeature([Book, BookQuote]),
     CategoriesModule,
-    AiModule,
-    NotificationsModule,
     TranslationQueueModule,
     MulterModule.registerAsync({
       imports: [ConfigModule],

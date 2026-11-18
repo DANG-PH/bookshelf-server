@@ -1,7 +1,8 @@
 # Tech Books — Backend
 
-API cho [tech-books](../tech-books): thay `data.json` hardcode bằng database thật,
-có xác thực bằng mã PIN, và cho phép upload sách (PDF + ảnh bìa) qua form.
+API cho [tech-books](../tech-books) — một thư viện sách mở: **ai cũng vào đọc
+được, không cần đăng nhập**. Chỉ trang quản trị (`admin.html`: thêm/sửa/xoá
+sách, chủ đề, thông tin trang) mới cần mã PIN.
 
 ## 1. Chuẩn bị database
 
@@ -23,12 +24,14 @@ cp .env.example .env
 ```
 
 Sửa lại các giá trị `DB_*` cho đúng database của bạn. Mặc định sẵn:
-- `AUTH_PIN=010826` (mã PIN vào web). Muốn an toàn hơn thì dùng `AUTH_PIN_HASH`
-  thay vì `AUTH_PIN` — tạo hash bằng:
+- `AUTH_PIN` — mã PIN vào **trang quản trị** (đọc sách không cần). Có thể đặt
+  nhiều mã cùng lúc, cách nhau bằng dấu phẩy (vd. `AUTH_PIN=111111,222222`).
+  Muốn an toàn hơn thì dùng `AUTH_PIN_HASH` thay vì `AUTH_PIN` — tạo hash bằng:
   ```bash
-  node -e "console.log(require('bcryptjs').hashSync('010826', 12))"
+  node -e "console.log(require('bcryptjs').hashSync('<mã PIN>', 12))"
   ```
-  rồi dán vào `AUTH_PIN_HASH`, xoá dòng `AUTH_PIN`.
+  rồi dán vào `AUTH_PIN_HASH` (nhiều hash thì cách nhau bằng dấu phẩy), xoá dòng
+  `AUTH_PIN`.
 - `JWT_SECRET` nên đổi thành chuỗi random dài (`openssl rand -hex 32`).
 - `CORS_ORIGIN` đổi thành domain thật của frontend khi deploy (vd.
   `https://book.dangpham.id.vn`), để `*` chỉ tiện cho dev local.
@@ -98,9 +101,9 @@ Sửa hằng số `API_BASE` ở đầu phần `<script>` trong
 [`../tech-books/admin.html`](../tech-books/admin.html) trỏ về URL backend thật
 sau khi deploy (vd. `https://api.book.dangpham.id.vn/api`).
 
-Frontend giờ đọc dữ liệu từ `GET /api/catalog` thay vì `data.json`, và bắt nhập
-mã PIN trước khi vào trang — gọi `POST /api/auth/login` để lấy JWT, lưu ở
-`localStorage`, tự động hỏi lại PIN khi hết hạn.
+Trang đọc (`index.html`) lấy dữ liệu từ `GET /api/catalog` — công khai, không
+cần đăng nhập. Trang quản trị (`admin.html`) hỏi mã PIN, gọi
+`POST /api/auth/login` để lấy JWT, lưu ở `localStorage`, tự hỏi lại khi hết hạn.
 
 `tech-books/data.json` vẫn giữ lại trong repo cũ chỉ để làm nguồn cho
 `npm run seed`, trang web không còn fetch file này nữa.
@@ -109,20 +112,19 @@ mã PIN trước khi vào trang — gọi `POST /api/auth/login` để lấy JWT
 
 | Method | Path                    | Auth | Mô tả |
 |---|---|---|---|
-| POST | `/api/auth/login`        | công khai | Gửi `{ pin }`, trả về JWT |
-| GET  | `/api/catalog`            | JWT | Toàn bộ dữ liệu cho trang chính (curator + categories + books) |
-| GET/POST/PATCH/DELETE | `/api/categories` | JWT | CRUD ngăn sách |
-| GET/POST/PATCH/DELETE | `/api/books` | JWT | CRUD sách. POST/PATCH nhận `multipart/form-data` (field `file` = PDF upload, hoặc `pdfUrl` = link PDF có sẵn để server tự tải về; `cover` = ảnh upload, hoặc `coverUrl` = link ảnh ngoài) |
-| GET/PATCH | `/api/settings` | JWT | Thông tin curator hiển thị ở sidebar |
-| GET | `/api/files/:type/:filename` | công khai (xem ghi chú) | Phục vụ PDF/ảnh đã upload (`type` = `books` hoặc `covers`) |
+| POST | `/api/auth/login`        | công khai | Gửi `{ pin }`, trả về JWT quản trị |
+| GET  | `/api/catalog`            | công khai | Toàn bộ dữ liệu cho trang đọc (thông tin trang + categories + books + trích dẫn) |
+| GET | `/api/files/:type/:filename` | công khai | Phục vụ PDF/ảnh đã upload (`type` = `books` hoặc `covers`) |
+| POST | `/api/books/:id/view` | công khai | Tăng lượt xem khi có người mở sách |
 | GET | `/api/health` | công khai | Health check |
+| GET/POST/PATCH/DELETE | `/api/categories` | quản trị | CRUD ngăn sách |
+| GET/POST/PATCH/DELETE | `/api/books` | quản trị | CRUD sách. POST/PATCH nhận `multipart/form-data` (field `file` = PDF upload, hoặc `pdfUrl` = link PDF có sẵn để server tự tải về; `cover` = ảnh upload, hoặc `coverUrl` = link ảnh ngoài) |
+| POST/DELETE | `/api/books/:id/quotes` | quản trị | Thêm/xoá trích dẫn hay của sách |
+| POST | `/api/books/:id/translate` | quản trị | Đưa sách vào hàng đợi biên dịch tiếng Việt |
+| GET/PATCH | `/api/settings` | quản trị | Thông tin hiển thị ở sidebar |
 
-`/api/files/*` cố tình để công khai: link này chỉ được trả về bên trong response
-`/api/catalog` (vốn đã cần JWT để lấy), và tên file là UUID ngẫu nhiên — bắt
-buộc thêm JWT ở đây sẽ phá `<img src>`/`<a href>` thuần trên frontend mà không
-tăng thêm bảo mật đáng kể.
-
-Đăng nhập bị giới hạn 5 lần/phút/IP (chống dò PIN).
+Đăng nhập quản trị bị giới hạn 5 lần/phút/IP (chống dò PIN); mọi route khác
+60 lần/phút/IP.
 
 ## Run tests
 

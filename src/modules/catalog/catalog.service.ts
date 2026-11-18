@@ -81,27 +81,7 @@ export class CatalogService {
             translating:
               b.translationJobStatus === 'queued' ||
               b.translationJobStatus === 'processing',
-            readStatus: b.readStatus,
-            startedAt: b.startedAt,
-            finishedAt: b.finishedAt,
-            favoritedBy: b.favoritedBy || [],
-            // newest first — this is a running log of entries, not one
-            // slot per person, so recency is the natural order
-            reviews: (b.reviews || [])
-              .slice()
-              .sort(
-                (a, c) =>
-                  new Date(c.createdAt).getTime() -
-                  new Date(a.createdAt).getTime(),
-              )
-              .map((r) => ({
-                id: r.id,
-                author: r.author,
-                rating: r.rating,
-                review: r.review,
-                createdAt: r.createdAt,
-              })),
-            // newest first, same reasoning as reviews above
+            // saved passages from the book itself — newest first
             quotes: (b.quotes || [])
               .slice()
               .sort(

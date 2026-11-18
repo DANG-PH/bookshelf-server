@@ -13,51 +13,23 @@ const COLOR = {
 } as const;
 
 const GEO_LOOKUP_TIMEOUT_MS = 3_000;
-const VISIT_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2h — one "opened the site" ping per device per window, not per reload
 
-// Sign-in notifications for the PIN-gated site, sent to a Discord webhook —
-// the same shape as "new sign-in" emails from any mainstream app (when,
-// what device, roughly where). Deliberately generic: with a single shared
-// PIN, any successful login already answers "did someone get in", so this
-// doesn't try to fingerprint or confirm who specifically it was.
+// Admin sign-in notifications, sent to a Discord webhook — the same shape
+// as "new sign-in" emails from any mainstream app (when, what device,
+// roughly where). Only the admin PIN login is reported: reading the
+// library is public, so ordinary visitors are never tracked here.
 @Injectable()
 export class DiscordAlertService {
   private readonly logger = new Logger(DiscordAlertService.name);
   private readonly webhookUrl?: string;
-  // in-memory de-dupe so a cached-token page load doesn't ping on every
-  // single reload — fine to lose on restart, this is a "just now" signal
-  private readonly lastVisitAlertAt = new Map<string, number>();
 
   constructor(config: ConfigService) {
     this.webhookUrl = config.get<string>('DISCORD_WEBHOOK_URL');
   }
 
-  // Fires on every GET /catalog, i.e. every time the site is actually
-  // opened — unlike loginSuccess(), which only fires when the PIN form is
-  // used (skipped entirely once the JWT is cached in localStorage).
-  // Rate-limited per IP+device so browsing around doesn't spam the channel.
-  async siteVisit(meta: { ip: string; userAgent: string }): Promise<void> {
-    const key = `${meta.ip}::${meta.userAgent}`;
-    const last = this.lastVisitAlertAt.get(key) || 0;
-    if (Date.now() - last < VISIT_COOLDOWN_MS) return;
-    this.lastVisitAlertAt.set(key, Date.now());
-
-    const location = await this.lookupLocation(meta.ip);
-    await this.send('Có người đang mở Thư Viện', COLOR.GREEN, [
-      { name: 'Thời gian', value: this.nowVN(), inline: true },
-      {
-        name: 'Thiết bị',
-        value: this.describeDevice(meta.userAgent),
-        inline: true,
-      },
-      { name: 'IP', value: meta.ip || 'Không rõ', inline: true },
-      { name: 'Vị trí (ước lượng theo IP)', value: location, inline: true },
-    ]);
-  }
-
   async loginSuccess(meta: { ip: string; userAgent: string }): Promise<void> {
     const location = await this.lookupLocation(meta.ip);
-    await this.send('Có người vừa mở khoá Thư Viện', COLOR.GREEN, [
+    await this.send('Có người vừa đăng nhập trang quản trị', COLOR.GREEN, [
       { name: 'Thời gian', value: this.nowVN(), inline: true },
       {
         name: 'Thiết bị',
@@ -70,7 +42,7 @@ export class DiscordAlertService {
   }
 
   async loginFailed(meta: { ip: string; userAgent: string }): Promise<void> {
-    await this.send('Có người nhập sai mã PIN', COLOR.ORANGE, [
+    await this.send('Có người nhập sai mã quản trị', COLOR.ORANGE, [
       { name: 'Thời gian', value: this.nowVN(), inline: true },
       {
         name: 'Thiết bị',
@@ -78,37 +50,6 @@ export class DiscordAlertService {
         inline: true,
       },
       { name: 'IP', value: meta.ip || 'Không rõ', inline: true },
-    ]);
-  }
-
-  // fires only for a genuinely new device (PushService checks that before
-  // calling this) — re-subscribing the same device on the same endpoint
-  // doesn't ping again
-  async pushSubscribed(meta: { ip: string; userAgent: string }): Promise<void> {
-    const location = await this.lookupLocation(meta.ip);
-    await this.send('Có thiết bị mới đăng ký nhận thông báo', COLOR.GREEN, [
-      { name: 'Thời gian', value: this.nowVN(), inline: true },
-      {
-        name: 'Thiết bị',
-        value: this.describeDevice(meta.userAgent),
-        inline: true,
-      },
-      { name: 'IP', value: meta.ip || 'Không rõ', inline: true },
-      { name: 'Vị trí (ước lượng theo IP)', value: location, inline: true },
-    ]);
-  }
-
-  async appInstalled(meta: { ip: string; userAgent: string }): Promise<void> {
-    const location = await this.lookupLocation(meta.ip);
-    await this.send('Có người vừa cài app Thư Viện', COLOR.GREEN, [
-      { name: 'Thời gian', value: this.nowVN(), inline: true },
-      {
-        name: 'Thiết bị',
-        value: this.describeDevice(meta.userAgent),
-        inline: true,
-      },
-      { name: 'IP', value: meta.ip || 'Không rõ', inline: true },
-      { name: 'Vị trí (ước lượng theo IP)', value: location, inline: true },
     ]);
   }
 
@@ -117,7 +58,7 @@ export class DiscordAlertService {
     color: number,
     fields: DiscordField[],
   ): Promise<void> {
-    if (!this.webhookUrl) return; // not configured — silently skip, same as the original sample
+    if (!this.webhookUrl) return; // not configured — silently skip
     try {
       await fetch(this.webhookUrl, {
         method: 'POST',
@@ -140,7 +81,7 @@ export class DiscordAlertService {
   }
 
   // Coarse only — "iPhone", "Android", "Mac", etc. Not a full user-agent
-  // parser, and deliberately not trying to distinguish who's behind it.
+  // parser.
   private describeDevice(ua: string): string {
     if (!ua) return 'Không rõ';
     if (/iPhone/i.test(ua)) return 'iPhone (Safari)';

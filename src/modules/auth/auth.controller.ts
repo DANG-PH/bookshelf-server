@@ -22,7 +22,7 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  @ApiOperation({ summary: 'Nhập mã PIN để vào thư viện' })
+  @ApiOperation({ summary: 'Đăng nhập trang quản trị bằng mã PIN' })
   login(@Body() dto: LoginDto, @Req() req: Request) {
     return this.authService.login(dto.pin, {
       ip: req.ip || '',

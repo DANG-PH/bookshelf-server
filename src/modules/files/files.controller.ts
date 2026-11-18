@@ -13,7 +13,7 @@ import { existsSync } from 'fs';
 import { basename, join, resolve } from 'path';
 import { Public } from '../../common/decorators/public.decorator';
 
-const ALLOWED_TYPES = ['books', 'covers', 'diary'] as const;
+const ALLOWED_TYPES = ['books', 'covers'] as const;
 
 @ApiTags('files')
 @Controller('files')
@@ -26,12 +26,8 @@ export class FilesController {
     );
   }
 
-  // Public by design, not oversight: this URL is only ever handed out
-  // inside an already-PIN-gated /catalog response, and filenames are
-  // random UUIDs. Requiring a Bearer token here as well would break plain
-  // <img src> and <a href> tags in the frontend (they can't send headers),
-  // forcing every cover/PDF through a JS fetch+blob-URL dance for very
-  // little real gain over the current unguessable-URL protection.
+  // Public: the library itself is public (see GET /catalog), and plain
+  // <img src> / <a href> tags can't send an auth header anyway.
   @Public()
   @Get(':type/:filename')
   serve(

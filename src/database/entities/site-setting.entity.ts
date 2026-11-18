@@ -1,6 +1,6 @@
 import { Column, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
-// singleton row (id fixed to 1) holding the "curator" byline shown on the site
+// singleton row (id fixed to 1) holding the library's byline shown on the site
 @Entity('site_settings')
 export class SiteSetting {
   @PrimaryColumn({ default: 1 })
@@ -20,11 +20,6 @@ export class SiteSetting {
 
   @Column({ nullable: true })
   updatedLabel: string;
-
-  // display name for the "other" diary author — curatorName is already
-  // the first author's name, this is the second one's
-  @Column({ default: 'Vy' })
-  partnerName: string;
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;

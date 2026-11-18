@@ -13,14 +13,6 @@ import { BooksModule } from './modules/books/books.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { FilesModule } from './modules/files/files.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
-import { DiaryModule } from './modules/diary/diary.module';
-import { MemoriesModule } from './modules/memories/memories.module';
-import { AuthorLocksModule } from './modules/author-locks/author-locks.module';
-import { AiModule } from './modules/ai/ai.module';
-import { NotificationsModule } from './modules/notifications/notifications.module';
-import { PushModule } from './modules/push/push.module';
-import { RemindersModule } from './modules/reminders/reminders.module';
-import { SearchModule } from './modules/search/search.module';
 import { TranslationQueueModule } from './modules/translation-queue/translation-queue.module';
 import { HealthController } from './health.controller';
 
@@ -40,19 +32,14 @@ import { HealthController } from './health.controller';
     SettingsModule,
     FilesModule,
     CatalogModule,
-    DiaryModule,
-    MemoriesModule,
-    AuthorLocksModule,
-    AiModule,
-    NotificationsModule,
-    PushModule,
-    RemindersModule,
-    SearchModule,
     TranslationQueueModule,
   ],
   controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // every route needs the admin JWT unless it's explicitly @Public() —
+    // reading the library (catalog, files, view counter) is public,
+    // everything that changes it is admin-only
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })

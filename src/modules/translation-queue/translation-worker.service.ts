@@ -10,7 +10,6 @@ import { LessThanOrEqual, Repository } from 'typeorm';
 import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { Book } from '../../database/entities/book.entity';
-import { NotificationsService } from '../notifications/notifications.service';
 
 interface TranslateResponse {
   ok?: boolean;
@@ -70,7 +69,6 @@ export class TranslationWorkerService implements OnApplicationBootstrap {
     @InjectRepository(Book)
     private readonly booksRepo: Repository<Book>,
     private readonly config: ConfigService,
-    private readonly notificationsService: NotificationsService,
   ) {
     this.translatorUrl = this.config.get<string>('PDF_TRANSLATOR_URL');
     this.translatorUploadPath = this.config.get<string>(
@@ -118,8 +116,8 @@ export class TranslationWorkerService implements OnApplicationBootstrap {
   @Cron(POLL_CRON)
   async poll(): Promise<void> {
     // PDF_TRANSLATOR_URL unset — feature simply isn't available, same
-    // "leave it unset and nothing else breaks" pattern as PushService/
-    // AiService's optional config
+    // "leave it unset and nothing else breaks" pattern as the other
+    // optional config
     if (!this.translatorUrl || this.running) return;
 
     const alreadyProcessing = await this.booksRepo.count({
@@ -215,9 +213,6 @@ export class TranslationWorkerService implements OnApplicationBootstrap {
         book.translationNextRetryAt = null;
         await this.booksRepo.save(book);
         this.logger.log(`[Translate] Xong "${book.title}"`);
-        this.notificationsService
-          .create(`Đã biên dịch xong "${book.title}" sang tiếng Việt.`)
-          .catch(() => undefined);
       } else {
         // still usable — translatedFileUrl above already points at this
         // run's (more complete than before) output — just not finished
@@ -229,11 +224,6 @@ export class TranslationWorkerService implements OnApplicationBootstrap {
         this.logger.log(
           `[Translate] "${book.title}" dịch được một phần (còn ${data.untranslatedCount ?? '?'}/${data.totalSegments ?? '?'} đoạn), sẽ tự thử lại sau`,
         );
-        this.notificationsService
-          .create(
-            `"${book.title}" đã có bản dịch một phần, đọc được ngay — sẽ tự tiếp tục hoàn thiện.`,
-          )
-          .catch(() => undefined);
       }
     } catch (err) {
       const message = this.describeError(err).slice(0, 2000);
@@ -245,9 +235,6 @@ export class TranslationWorkerService implements OnApplicationBootstrap {
       book.translationNextRetryAt = new Date(Date.now() + RETRY_DELAY_MS);
       await this.booksRepo.save(book);
       this.logger.warn(`[Translate] "${book.title}" thất bại: ${message}`);
-      this.notificationsService
-        .create(`Biên dịch "${book.title}" thất bại, sẽ tự thử lại sau.`)
-        .catch(() => undefined);
     } finally {
       await fs
         .rm(hostJobDir, { recursive: true, force: true })

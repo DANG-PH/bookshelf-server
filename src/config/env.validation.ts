@@ -50,10 +50,12 @@ class EnvironmentVariables {
   @IsString()
   JWT_EXPIRES_IN: string = '7d';
 
+  // Admin PIN(s) for the management page (reading the library needs none).
   // Either AUTH_PIN (plain, dev-friendly) or AUTH_PIN_HASH (bcrypt, recommended
-  // for anything reachable from the internet) must be set — checked at runtime
-  // in AuthService rather than here, since exactly-one-of isn't expressible
-  // cleanly with class-validator without a custom validator.
+  // for anything reachable from the internet) must be set; both accept a
+  // comma-separated list so several PINs can be valid at once. Checked at
+  // runtime in AuthService rather than here, since exactly-one-of isn't
+  // expressible cleanly with class-validator without a custom validator.
   @IsOptional()
   @IsString()
   AUTH_PIN?: string;
@@ -77,39 +79,11 @@ class EnvironmentVariables {
   @IsString()
   PUBLIC_URL: string = '';
 
-  // Optional — Discord webhook for login notifications. Leave unset to
-  // disable (DiscordAlertService silently no-ops without it).
+  // Optional — Discord webhook for admin-login notifications. Leave unset
+  // to disable (DiscordAlertService silently no-ops without it).
   @IsOptional()
   @IsString()
   DISCORD_WEBHOOK_URL?: string;
-
-  // Optional — powers the /ai/ask library chatbot (RAG over the PDFs
-  // already in the library). Leave unset and AiService just answers
-  // "chatbot chưa được bật" instead of indexing/calling out to Gemini.
-  @IsOptional()
-  @IsString()
-  GEMINI_API_KEY?: string;
-
-  @IsOptional()
-  @IsString()
-  AI_SYSTEM_PROMPT?: string;
-
-  // Optional — powers real push notifications (works even when the site
-  // isn't open, like a native app). Leave unset and PushService just
-  // silently skips sending — nothing else breaks. Generate a pair with
-  // `npx web-push generate-vapid-keys` and never rotate it once devices
-  // have subscribed, or they'll all need to re-subscribe from scratch.
-  @IsOptional()
-  @IsString()
-  VAPID_PUBLIC_KEY?: string;
-
-  @IsOptional()
-  @IsString()
-  VAPID_PRIVATE_KEY?: string;
-
-  @IsOptional()
-  @IsString()
-  VAPID_SUBJECT?: string;
 
   // Optional — base URL of the pdf-translator sidecar container (see
   // docker-compose.yml and docs/vi-translate.md). Leave unset and the

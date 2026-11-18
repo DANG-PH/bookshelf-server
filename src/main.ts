@@ -25,9 +25,8 @@ async function bootstrap() {
   // (book-api.dangpham.id.vn) are different origins. That's invisible in
   // curl/Postman (CORP is a browser-enforced check, not a server-side
   // rejection) and doesn't break fetch()-based JSON calls (already CORS'd
-  // above), only plain image embeds — which is exactly why diary/cover
-  // photos failed to load with no visible error until now. GET /api/files
-  // is already @Public() specifically to be embeddable this way.
+  // above), only plain image embeds like book covers. GET /api/files is
+  // @Public() specifically to be embeddable this way.
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.enableCors({
     origin: config.get<string>('CORS_ORIGIN', '*'),
@@ -44,7 +43,9 @@ async function bootstrap() {
   if (config.get<string>('NODE_ENV') !== 'production') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Tech Books API')
-      .setDescription('API cho thư viện sách cá nhân')
+      .setDescription(
+        'API cho thư viện sách mở — đọc công khai, quản trị bằng mã PIN',
+      )
       .setVersion('1.0')
       .addBearerAuth()
       .build();

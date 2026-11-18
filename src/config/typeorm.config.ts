@@ -1,17 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { AuthorLock } from '../database/entities/author-lock.entity';
 import { Book } from '../database/entities/book.entity';
 import { BookQuote } from '../database/entities/book-quote.entity';
-import { BookReview } from '../database/entities/book-review.entity';
 import { Category } from '../database/entities/category.entity';
-import { ChatMessage } from '../database/entities/chat-message.entity';
-import { ChatSession } from '../database/entities/chat-session.entity';
-import { DiaryEntry } from '../database/entities/diary-entry.entity';
-import { Memory } from '../database/entities/memory.entity';
-import { Notification } from '../database/entities/notification.entity';
-import { PushSubscription } from '../database/entities/push-subscription.entity';
-import { ReminderState } from '../database/entities/reminder-state.entity';
 import { SiteSetting } from '../database/entities/site-setting.entity';
 
 export function buildTypeOrmConfig(
@@ -23,22 +14,11 @@ export function buildTypeOrmConfig(
     username: config.get<string>('DB_USERNAME'),
     password: config.get<string>('DB_PASSWORD'),
     database: config.get<string>('DB_NAME'),
-    entities: [
-      Category,
-      Book,
-      BookReview,
-      BookQuote,
-      SiteSetting,
-      DiaryEntry,
-      Memory,
-      AuthorLock,
-      Notification,
-      ChatSession,
-      ChatMessage,
-      PushSubscription,
-      ReminderState,
-    ],
-    // Fine for a small personal project seeded/managed by one person.
+    entities: [Category, Book, BookQuote, SiteSetting],
+    // Fine for a small project managed by a couple of admins. Note that
+    // synchronize only ever touches tables for the entities listed above —
+    // tables from features that have since been removed are left as-is in
+    // the database, never dropped automatically.
     // Switch to migrations if this ever needs to run against data you
     // can't afford to lose on a schema change.
     synchronize: true,
