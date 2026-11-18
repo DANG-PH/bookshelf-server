@@ -79,7 +79,8 @@ class EnvironmentVariables {
   @IsString()
   PUBLIC_URL: string = '';
 
-  // Optional — Discord webhook for admin-login notifications. Leave unset
+  // Optional — Discord webhook for access notifications (any API caller,
+  // once per device per 2h, plus every admin login attempt). Leave unset
   // to disable (DiscordAlertService silently no-ops without it).
   @IsOptional()
   @IsString()

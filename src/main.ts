@@ -4,8 +4,9 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { mkdirSync } from 'fs';
-import type { Express } from 'express';
+import type { Express, NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
+import { DiscordAlertService } from './modules/discord-alert/discord-alert.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -18,6 +19,27 @@ async function bootstrap() {
   // behind a single reverse-proxy hop (nginx) in production — without this,
   // req.ip resolves to nginx's own address instead of the real client's
   (app.getHttpAdapter().getInstance() as Express).set('trust proxy', 1);
+
+  // report every caller of the API to Discord (de-duplicated per device
+  // inside DiscordAlertService) — the library is public, so this is how
+  // the owner keeps an eye on who's using it. A plain Express middleware
+  // rather than a Nest one so it sees everything, including unknown
+  // routes (scanners), files and the view counter. CORS preflights and
+  // the health check are skipped — they aren't a person visiting.
+  const discordAlert = app.get(DiscordAlertService);
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (req.method !== 'OPTIONS' && req.path !== '/api/health') {
+      discordAlert
+        .apiVisit({
+          ip: req.ip || '',
+          userAgent: req.headers['user-agent'] || '',
+          method: req.method,
+          path: req.path,
+        })
+        .catch(() => undefined);
+    }
+    next();
+  });
 
   // helmet's default Cross-Origin-Resource-Policy is "same-origin", which
   // silently blocks the browser from loading <img> tags whose src points
